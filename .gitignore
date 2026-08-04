@@ -5,6 +5,14 @@ __pycache__/
 ccc_origination.db*
 boot*.log
 boot*.err
+fix_test*.log
+fix_test*.err
+local_500*.log
+local_500*.err
+local_test*.log
+local_test*.err
+login_probe*.log
+login_probe*.err
 submit.log
 submit.err
 smoke.log

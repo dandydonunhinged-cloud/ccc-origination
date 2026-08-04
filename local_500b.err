@@ -1,7 +1,0 @@
-INFO:     Started server process [31484]
-INFO:     Waiting for application startup.
-C:\DandyDon\ccc-origination\app\seed.py:264: SAWarning: relationship 'Condition.documents' will copy column conditions.id to column documents.clears_condition_id, which conflicts with relationship(s): 'Document.clears_condition' (copies conditions.id to documents.clears_condition_id). If this is not the intention, consider if these relationships should be linked with back_populates, or if viewonly=True should be applied to one or more if they are read-only. For the less common case that foreign key constraints are partially overlapping, the orm.foreign() annotation can be used to isolate the columns that should be written towards.   To silence this warning, add the parameter 'overlaps="clears_condition"' to the 'Condition.documents' relationship. (Background on this warning at: https://sqlalche.me/e/20/qzyx) (This warning originated from the `configure_mappers()` process, which was invoked automatically in response to a user-initiated operation.)
-  lender = db.query(Lender).filter_by(slug=L["slug"]).one_or_none()
-INFO:app.app:CCC Origination started
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8816 (Press CTRL+C to quit)

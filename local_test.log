@@ -1,3 +1,0 @@
-INFO:     127.0.0.1:53339 - "POST /admin/login/ HTTP/1.1" 303 See Other
-INFO:     127.0.0.1:53340 - "GET /admin/ HTTP/1.1" 401 Unauthorized
-INFO:     127.0.0.1:53341 - "GET /admin/ HTTP/1.1" 500 Internal Server Error

@@ -1,0 +1,406 @@
+{% extends "shared/base.html" %}
+{% block title %}{{ deal.public_id }} · {{ deal.borrower.full_name }}{% endblock %}
+{% block body %}
+<div class="bar-rwb"></div>
+<div class="topbar">
+  <div class="shell row">
+    <div class="row">
+      <span class="brand">CCC Origination</span>
+      <nav>
+        <a href="/admin/">Dashboard</a>
+        <a href="/admin/pipeline/">Pipeline</a>
+        <a href="/admin/rates/">Rates</a>
+        <a href="/mortgage/">Marketing</a>
+      </nav>
+    </div>
+    <div class="row">
+      <a href="/admin/logout/">Logout</a>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+  <div class="row" style="justify-content:space-between; align-items:center">
+    <div>
+      <span class="deal-stage {{ deal.stage.value }}">{{ deal.stage.value.replace('_',' ') }}</span>
+      <h1 style="display:inline-block; margin-left:.5rem">{{ deal.public_id }}</h1>
+      <p class="muted">{{ deal.borrower.full_name }} · {{ deal.borrower.email }} · {{ deal.borrower.phone }}</p>
+    </div>
+    <div>
+      <a class="btn btn-sm" href="/admin/pipeline/">Pipeline</a>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a class="active" href="#deal">Deal</a>
+    <a href="#scenario">Scenario</a>
+    <a href="#conditions">Conditions ({{ conditions|length }})</a>
+    <a href="#submissions">Submissions ({{ submissions|length }})</a>
+    <a href="#docs">Documents ({{ documents|length }})</a>
+    <a href="#closing">Closing</a>
+    <a href="#timeline">Timeline ({{ events|length }})</a>
+  </div>
+
+  <section id="deal" class="card">
+    <h2>Deal</h2>
+    <div class="row">
+      <div class="col">
+        <p><strong>Type:</strong> {{ deal.loan_type.value.replace('_',' ') }}</p>
+        <p><strong>Target loan:</strong> ${{ "%.0f"|format(deal.target_loan_amount or 0) }}</p>
+        <p><strong>Down payment:</strong> ${{ "%.0f"|format(deal.down_payment or 0) }}</p>
+        <p><strong>Target close:</strong> {{ deal.target_close or '—' }}</p>
+        <p><strong>Lead source:</strong> {{ deal.lead_source or '—' }}</p>
+        <p><strong>FICO:</strong> {{ deal.borrower.credit_score or '—' }}</p>
+      </div>
+      <div class="col">
+        <p><strong>Property:</strong> {{ deal.property.address_line1 }}, {{ deal.property.city }}, {{ deal.property.state }} {{ deal.property.zip or '' }}</p>
+        <p><strong>Property type:</strong> {{ deal.property.property_type.value.replace('_',' ') }}</p>
+        <p><strong>Purchase price:</strong> ${{ "%.0f"|format(deal.property.purchase_price or 0) }}</p>
+        <p><strong>Projected rent:</strong> ${{ "%.0f"|format(deal.property.projected_rent or 0) }}/mo</p>
+        <p><strong>ARV:</strong> ${{ "%.0f"|format(deal.property.arv or 0) }}</p>
+        <p><strong>Rehab budget:</strong> ${{ "%.0f"|format(deal.property.rehab_budget or 0) }}</p>
+      </div>
+      <div class="col">
+        {% if deal.entity %}
+        <p><strong>Entity:</strong> {{ deal.entity.legal_name }} ({{ deal.entity.entity_type }}, {{ deal.entity.state_formed or '?' }})</p>
+        {% endif %}
+        <p><strong>Scenario score:</strong> {{ deal.scenario_score or '—' }}/100</p>
+        <p><strong>Stage entered:</strong> {{ deal.stage_entered_at.strftime('%Y-%m-%d %H:%M') if deal.stage_entered_at else '—' }}</p>
+        <p><strong>CTC:</strong> {{ deal.ctc_at.strftime('%Y-%m-%d') if deal.ctc_at else '—' }}</p>
+        <p><strong>Closed:</strong> {{ deal.closed_at.strftime('%Y-%m-%d') if deal.closed_at else '—' }}</p>
+        <p><strong>Recording:</strong> {{ deal.recording_number or '—' }}</p>
+      </div>
+    </div>
+
+    <details style="margin-top:1rem">
+      <summary>Change stage</summary>
+      <form method="post" action="/admin/deal/{{ deal.public_id }}/stage/" style="margin-top:.5rem">
+        <div class="row" style="align-items:flex-end">
+          <div class="col">
+            <label>New stage</label>
+            <select name="new_stage">
+              {% for s in ['lead_acquired','scenario_analyzed','first_contact','documents_collected','submitted','underwriting','clear_to_close','closing','post_close','pipeline_growth'] %}
+              <option value="{{ s }}" {% if s==deal.stage.value %}selected{% endif %}>{{ s.replace('_',' ') }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col">
+            <label>Note</label>
+            <input name="note" type="text">
+          </div>
+          <div><button class="btn btn-primary" type="submit">Update</button></div>
+        </div>
+      </form>
+    </details>
+
+    <details style="margin-top:.5rem">
+      <summary>Internal note</summary>
+      <form method="post" action="/admin/deal/{{ deal.public_id }}/note/" style="margin-top:.5rem">
+        <textarea name="body" rows="2" required></textarea>
+        <button class="btn btn-sm" type="submit" style="margin-top:.5rem">Add note</button>
+      </form>
+    </details>
+  </section>
+
+  <section id="scenario" class="card">
+    <h2>Scenario analysis</h2>
+    {% if not deal.scenario_report %}
+    <p class="muted">Not run yet.</p>
+    {% else %}
+      <p><strong>Score:</strong> {{ deal.scenario_score or '—' }}/100</p>
+      <h3>AI re-rank</h3>
+      <pre>{{ deal.scenario_report.ai | tojson(indent=2) if deal.scenario_report.ai is defined else deal.scenario_report | tojson(indent=2) }}</pre>
+      <h3>Local matrix rank</h3>
+      <table>
+        <thead><tr><th>Lender</th><th>Product</th><th>Score</th><th>Reasons</th></tr></thead>
+        <tbody>
+          {% for r in deal.scenario_report.local.ranked_lenders %}
+          <tr>
+            <td>{{ r.lender }}</td>
+            <td>{{ r.product }}</td>
+            <td>{{ r.score }}</td>
+            <td class="muted">{{ r.reasons|join('; ') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+    <form method="post" action="/admin/deal/{{ deal.public_id }}/scenario/" style="margin-top:1rem">
+      <button class="btn btn-sm" type="submit">Re-run scenario</button>
+    </form>
+  </section>
+
+  <section id="conditions" class="card">
+    <h2>Conditions</h2>
+    <form method="post" action="/admin/deal/{{ deal.public_id }}/condition/" class="form-row" style="display:grid; grid-template-columns: 200px 1fr 120px; gap:.5rem; align-items:end">
+      <div>
+        <label>Type</label>
+        <select name="condition_type">
+          {% for ct in playbooks.list_condition_types() %}
+          <option value="{{ ct }}">{{ playbooks.get_playbook(ct).title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Description</label>
+        <input name="description" type="text">
+      </div>
+      <button class="btn btn-primary" type="submit">Add</button>
+    </form>
+
+    {% if conditions %}
+    <table style="margin-top:.75rem">
+      <thead><tr><th>Type</th><th>Status</th><th>Requested</th><th>Received</th><th>Cleared</th><th></th></tr></thead>
+      <tbody>
+      {% for c in conditions %}
+      <tr>
+        <td>{{ c.condition_type.value }}</td>
+        <td><span class="pill {% if c.status.value=='cleared' %}pill-green{% elif c.status.value=='received' %}pill-gray{% else %}pill-red{% endif %}">{{ c.status.value }}</span></td>
+        <td class="muted">{{ c.requested_at.strftime('%Y-%m-%d') }}</td>
+        <td class="muted">{{ c.received_at.strftime('%Y-%m-%d') if c.received_at else '—' }}</td>
+        <td class="muted">{{ c.cleared_at.strftime('%Y-%m-%d') if c.cleared_at else '—' }}</td>
+        <td>
+          <form method="post" action="/admin/deal/{{ deal.public_id }}/condition/{{ c.id }}/status/" style="display:inline">
+            <select name="new_status">
+              {% for s in ['requested','received','in_review','cleared','rejected'] %}
+              <option value="{{ s }}" {% if s==c.status.value %}selected{% endif %}>{{ s }}</option>
+              {% endfor %}
+            </select>
+            <button class="btn btn-sm" type="submit">Set</button>
+          </form>
+        </td>
+      </tr>
+      <tr><td colspan="6">
+        <details>
+          <summary>Playbook</summary>
+          <p><strong>What they want:</strong> {{ playbooks.get_playbook(c.condition_type.value).what_they_want }}</p>
+          <p><strong>Borrower failure modes:</strong> {{ playbooks.get_playbook(c.condition_type.value).borrower_failure_modes|join('; ') }}</p>
+          <p><strong>Response template:</strong> {{ playbooks.get_playbook(c.condition_type.value).response_template }}</p>
+          {% if playbooks.get_playbook(c.condition_type.value).loe_template %}
+          <p><strong>LOE template:</strong> <code>{{ playbooks.get_playbook(c.condition_type.value).loe_template }}</code></p>
+          {% endif %}
+          <p><strong>SLA:</strong> {{ playbooks.get_playbook(c.condition_type.value).sla_hours }}h</p>
+        </details>
+      </td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No conditions yet.</p>
+    {% endif %}
+  </section>
+
+  <section id="submissions" class="card">
+    <h2>Submissions</h2>
+    <form method="post" action="/admin/deal/{{ deal.public_id }}/submission/" class="form-row" style="display:grid; grid-template-columns: 1fr 120px 200px 200px 120px; gap:.5rem; align-items:end">
+      <div>
+        <label>Lender / product</label>
+        <select name="product_id">
+          {% for p in products %}
+          <option value="{{ p.id }}">{{ p.lender.name }} — {{ p.name }} ({{ p.rate_band or 'no rate' }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div>
+        <label>Primary?</label>
+        <select name="is_primary"><option value="true">Yes</option><option value="false">No</option></select>
+      </div>
+      <div><label>AE name</label><input name="ae_name" type="text"></div>
+      <div><label>AE email</label><input name="ae_email" type="email"></div>
+      <button class="btn btn-primary" type="submit">Submit</button>
+    </form>
+    {% if submissions %}
+    <table style="margin-top:.75rem">
+      <thead><tr><th>Lender</th><th>Product</th><th>Status</th><th>Submitted</th><th>AE</th><th></th></tr></thead>
+      <tbody>
+        {% for s in submissions %}
+        <tr>
+          <td>{{ s.product.lender.name }}{% if s.is_primary %} <span class="pill">primary</span>{% endif %}</td>
+          <td>{{ s.product.name }}</td>
+          <td><span class="pill {% if s.status.value in ['approved','conditional'] %}pill-green{% elif s.status.value in ['declined','withdrawn'] %}pill-red{% else %}pill-gray{% endif %}">{{ s.status.value }}</span></td>
+          <td class="muted">{{ s.submitted_at.strftime('%Y-%m-%d') if s.submitted_at else '—' }}</td>
+          <td class="muted">{{ s.ae_name or '—' }}</td>
+          <td>
+            <form method="post" action="/admin/deal/{{ deal.public_id }}/submission/{{ s.id }}/status/" style="display:inline">
+              <select name="new_status">
+                {% for st in ['draft','submitted','in_review','conditional','suspended','declined','approved','withdrawn'] %}
+                <option value="{{ st }}" {% if st==s.status.value %}selected{% endif %}>{{ st }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-sm" type="submit">Set</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No submissions yet. Add one above when you submit to a lender.</p>
+    {% endif %}
+  </section>
+
+  <section id="docs" class="card">
+    <h2>Documents</h2>
+    {% if documents %}
+    <table>
+      <thead><tr><th>File</th><th>Purpose</th><th>Size</th><th>Uploaded</th><th>By</th><th>View</th></tr></thead>
+      <tbody>
+        {% for d in documents %}
+        <tr>
+          <td>{{ d.filename }}</td>
+          <td>{{ d.purpose }}</td>
+          <td class="muted">{{ d.size_bytes or '—' }}B</td>
+          <td class="muted">{{ d.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="muted">{{ d.uploaded_by }}</td>
+          <td><a href="{{ d.spaces_url }}" target="_blank" rel="noopener">View</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No documents uploaded yet.</p>
+    {% endif %}
+  </section>
+
+  <section id="closing" class="card">
+    <h2>Closing</h2>
+    <form method="post" action="/admin/deal/{{ deal.public_id }}/closing/">
+      <div class="row">
+        <div class="col">
+          <label>Title company</label>
+          <input name="title_company" type="text" value="{{ closing.title_company if closing else '' }}">
+          <label>Title agent</label>
+          <input name="title_agent" type="text" value="{{ closing.title_agent if closing else '' }}">
+          <label>Insurance agent</label>
+          <input name="insurance_agent" type="text" value="{{ closing.insurance_agent if closing else '' }}">
+          <label><input type="checkbox" name="insurance_bound" {% if closing and closing.insurance_bound %}checked{% endif %}> Insurance bound</label>
+        </div>
+        <div class="col">
+          <label>Closing date</label>
+          <input name="closing_date" type="date" value="{{ closing.closing_date.isoformat() if closing and closing.closing_date else '' }}">
+          <label>Loan amount (cents)</label>
+          <input name="loan_amount_cents" type="number" value="{{ closing.loan_amount_cents if closing else '' }}">
+          <label>Rate (%)</label>
+          <input name="rate" type="number" step="0.001" value="{{ closing.rate if closing else '' }}">
+          <label>Term (months)</label>
+          <input name="term_months" type="number" value="{{ closing.term_months if closing else 360 }}">
+        </div>
+        <div class="col">
+          <label>Borrower origination (cents)</label>
+          <input name="borrower_origination_cents" type="number" value="{{ closing.borrower_origination_cents if closing else '' }}">
+          <label>Lender YSP (cents)</label>
+          <input name="lender_ysp_cents" type="number" value="{{ closing.lender_ysp_cents if closing else '' }}">
+          <label>Processing (cents)</label>
+          <input name="processing_cents" type="number" value="{{ closing.processing_cents if closing else '' }}">
+          <label>Admin (cents)</label>
+          <input name="admin_cents" type="number" value="{{ closing.admin_cents if closing else '' }}">
+          <label>Cash to close (cents)</label>
+          <input name="cash_to_close_cents" type="number" value="{{ closing.cash_to_close_cents if closing else '' }}">
+        </div>
+        <div class="col">
+          <label>Recorded at</label>
+          <input name="recorded_at" type="datetime-local" value="{{ closing.recorded_at.isoformat(timespec='minutes') if closing and closing.recorded_at else '' }}">
+          <label>Recording number</label>
+          <input name="recording_number" type="text" value="{{ closing.recording_number if closing else '' }}">
+          <label>Notes</label>
+          <textarea name="notes" rows="2">{{ closing.notes if closing else '' }}</textarea>
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit" style="margin-top:.75rem">Save closing</button>
+    </form>
+
+    <h3 style="margin-top:1.5rem">Comp payments</h3>
+    <form method="post" action="/admin/deal/{{ deal.public_id }}/comp/" style="display:grid; grid-template-columns: 180px 140px 200px 200px 120px; gap:.5rem; align-items:end">
+      <div><label>Type</label>
+        <select name="comp_type">
+          {% for ct in ['borrower_origination','lender_ysp','processing','admin','referral'] %}
+          <option value="{{ ct }}">{{ ct.replace('_',' ') }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><label>Amount (cents)</label><input name="amount_cents" type="number" required></div>
+      <div><label>Payer</label><input name="payer" type="text"></div>
+      <div><label>Paid to</label><input name="paid_to" type="text"></div>
+      <button class="btn btn-primary" type="submit">Add</button>
+    </form>
+    {% if comps %}
+    <table style="margin-top:.5rem">
+      <thead><tr><th>Type</th><th>Amount</th><th>Payer</th><th>Received</th></tr></thead>
+      <tbody>
+        {% for c in comps %}
+        <tr><td>{{ c.comp_type.value }}</td><td>${{ "%.2f"|format(c.amount_cents/100) }}</td><td>{{ c.payer or '—' }}</td><td class="muted">{{ c.received_at.strftime('%Y-%m-%d') }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <section id="timeline" class="card">
+    <h2>Timeline</h2>
+    {% if events %}
+    <table>
+      <thead><tr><th>When</th><th>Who</th><th>What</th></tr></thead>
+      <tbody>
+        {% for e in events %}
+        <tr>
+          <td class="muted">{{ e.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ e.actor or '—' }}</td>
+          <td><code>{{ e.kind }}</code>
+            {% if e.payload %}<br><span class="muted">{{ e.payload }}</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+  </section>
+
+  <section id="messages" class="card">
+    <h2>Messages with borrower</h2>
+    {% if messages %}
+    <div>
+      {% for m in messages %}
+      <div style="padding:.5rem 0; border-bottom:1px solid var(--c-line)">
+        <strong>{{ m.from_party }}:</strong> {{ m.body }}
+        <div class="muted">{{ m.created_at.strftime('%Y-%m-%d %H:%M') }} {% if not m.visible_to_borrower %} · <em>internal only</em>{% endif %}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <form method="post" action="/admin/deal/{{ deal.public_id }}/message/" style="margin-top:1rem">
+      <label>Send to borrower</label>
+      <textarea name="body" rows="3" required></textarea>
+      <label style="margin-top:.5rem"><input type="checkbox" name="visible_to_borrower" value="true" checked> Borrower can see this</label>
+      <button class="btn btn-primary" type="submit" style="margin-top:.5rem">Send</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Outcome</h2>
+    {% if outcome %}
+    <p><strong>{{ outcome.outcome }}</strong>
+      {% if outcome.chosen_lender %}· {{ outcome.chosen_lender.name }}{% endif %}
+      {% if outcome.rate_at_close %}· {{ outcome.rate_at_close }}%{% endif %}
+      {% if outcome.comp_at_close_cents %}· ${{ "%.2f"|format(outcome.comp_at_close_cents/100) }}{% endif %}
+      {% if outcome.days_to_fund %}· {{ outcome.days_to_fund }}d to fund{% endif %}
+    </p>
+    {% endif %}
+    <form method="post" action="/admin/deal/{{ deal.public_id }}/outcome/" style="display:grid; grid-template-columns: 180px 1fr; gap:.5rem; align-items:end">
+      <div><label>Outcome</label>
+        <select name="outcome">
+          {% for o in ['funded','declined','withdrawn','fell_out','partial'] %}
+          <option value="{{ o }}">{{ o.replace('_',' ') }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div><label>Notes</label><input name="notes" type="text"></div>
+      <div><label>Rate at close (%)</label><input name="rate_at_close" type="number" step="0.001"></div>
+      <div><label>Comp at close (cents)</label><input name="comp_at_close_cents" type="number"></div>
+      <div><label>Days to fund</label><input name="days_to_fund" type="number"></div>
+      <div><label>Declined reason</label><input name="declined_reason" type="text"></div>
+      <div><label>Fell-out reason</label><input name="fellout_reason" type="text"></div>
+      <button class="btn btn-primary" type="submit">Save</button>
+    </form>
+  </section>
+</div>
+{% endblock %}

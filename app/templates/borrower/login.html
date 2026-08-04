@@ -1,0 +1,18 @@
+{% extends "shared/base.html" %}
+{% block title %}Portal login · ClickClickClose{% endblock %}
+{% block body %}
+<div class="bar-rwb"></div>
+<div class="topbar"><div class="shell"><span class="brand">ClickClickClose</span></div></div>
+<div class="shell" style="max-width:480px">
+  <h1>Borrower portal</h1>
+  {% if error %}<div class="flash flash-red">{{ error }}</div>{% endif %}
+  {% if info %}<div class="flash">{{ info }}</div>{% endif %}
+
+  <form method="post" action="/portal/login/" class="card">
+    <label for="email">Your email</label>
+    <input id="email" name="email" type="email" required autofocus>
+    <button class="btn btn-primary" type="submit" style="margin-top:1rem">Send sign-in link</button>
+  </form>
+  <p class="muted">You'll get an email with a one-time link. In dev, the link appears in the server logs.</p>
+</div>
+{% endblock %}

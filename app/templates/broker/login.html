@@ -1,0 +1,25 @@
+{% extends "shared/base.html" %}
+{% block title %}Login · CCC Origination{% endblock %}
+{% block body %}
+<div class="bar-rwb"></div>
+<div class="shell" style="max-width:420px; padding-top:3rem">
+  <h1>CCC Origination</h1>
+  <p class="muted">Broker command surface.</p>
+
+  {% if error %}<div class="flash flash-red">{{ error }}</div>{% endif %}
+  {% if info %}<div class="flash">{{ info }}</div>{% endif %}
+
+  <form method="post" action="/admin/login/" class="card">
+    <div class="form-row">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required autofocus value="don@dandydon.media">
+    </div>
+    <div class="form-row">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" required>
+    </div>
+    <button class="btn btn-primary" type="submit">Sign in</button>
+  </form>
+  <p class="muted">Marketing: <a href="/mortgage/">/mortgage/</a></p>
+</div>
+{% endblock %}

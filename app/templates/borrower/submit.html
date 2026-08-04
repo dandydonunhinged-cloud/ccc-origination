@@ -1,0 +1,103 @@
+{% extends "shared/base.html" %}
+{% block title %}Submit a deal · ClickClickClose{% endblock %}
+{% block body %}
+<div class="bar-rwb"></div>
+<div class="topbar">
+  <div class="shell row">
+    <div class="row">
+      <span class="brand">ClickClickClose</span>
+      <nav>
+        <a href="/mortgage/">Overview</a>
+        <a href="/portal/">Portal</a>
+      </nav>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+  <h1>Submit a deal</h1>
+  <p class="muted">Don calls within 15 minutes during business hours. The 5-pass AI runs the second you submit.</p>
+
+  <form method="post" action="/submit/" class="card">
+    <h2>Borrower</h2>
+    <div class="row">
+      <div class="col"><label>Full name</label><input name="full_name" type="text" required></div>
+      <div class="col"><label>Email</label><input name="email" type="email" required></div>
+      <div class="col"><label>Phone</label><input name="phone" type="tel" required></div>
+      <div class="col"><label>Credit score (estimated)</label><input name="credit_score" type="number" min="300" max="850" required></div>
+    </div>
+
+    <h2>Entity (optional)</h2>
+    <div class="row">
+      <div class="col"><label>Entity name</label><input name="entity_name" type="text"></div>
+      <div class="col"><label>Entity type</label>
+        <select name="entity_type"><option>LLC</option><option>Corp</option><option>Trust</option><option>Individual</option></select>
+      </div>
+      <div class="col"><label>State formed</label><input name="entity_state" type="text" maxlength="4" placeholder="e.g. TX"></div>
+    </div>
+
+    <h2>Property</h2>
+    <div class="row">
+      <div class="col"><label>Address</label><input name="property_address" type="text" required></div>
+      <div class="col"><label>City</label><input name="property_city" type="text" required></div>
+      <div class="col"><label>State</label><input name="property_state" type="text" maxlength="4" required></div>
+      <div class="col"><label>ZIP</label><input name="property_zip" type="text"></div>
+    </div>
+    <div class="row">
+      <div class="col"><label>Property type</label>
+        <select name="property_type" required>
+          <option value="">— select —</option>
+          <option value="sfr">Single-family (SFR)</option>
+          <option value="two_four">2–4 unit</option>
+          <option value="five_plus">5+ unit multifamily</option>
+          <option value="condo_townhome">Condo / townhome</option>
+          <option value="commercial_mixed_use">Commercial / mixed-use</option>
+        </select>
+      </div>
+      <div class="col"><label>Purchase price</label><input name="purchase_price" type="number" step="0.01" required></div>
+      <div class="col"><label>Target loan amount</label><input name="target_loan_amount" type="number" step="0.01" required></div>
+      <div class="col"><label>Down payment</label><input name="down_payment" type="number" step="0.01" value="0"></div>
+    </div>
+    <div class="row">
+      <div class="col"><label>Projected monthly rent (DSCR)</label><input name="projected_rent" type="number" step="0.01" value="0"></div>
+      <div class="col"><label>After-repair value (ARV, flips)</label><input name="arv" type="number" step="0.01" value="0"></div>
+      <div class="col"><label>Rehab budget</label><input name="rehab_budget" type="number" step="0.01" value="0"></div>
+      <div class="col"><label>Loan type</label>
+        <select name="loan_type" required>
+          <option value="">— select —</option>
+          <option value="dscr_purchase">DSCR purchase</option>
+          <option value="dscr_refi">DSCR refinance (rate/term)</option>
+          <option value="dscr_cashout">DSCR cash-out refinance</option>
+          <option value="bridge">Bridge</option>
+          <option value="fix_flip">Fix &amp; flip</option>
+          <option value="construction">Ground-up construction</option>
+          <option value="commercial">Commercial</option>
+          <option value="sba_7a">SBA 7(a)</option>
+          <option value="sba_504">SBA 504</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div class="col"><label>Target close date</label><input name="target_close" type="date"></div>
+      <div class="col"><label>Lead source</label>
+        <select name="lead_source">
+          <option value="website">Website</option>
+          <option value="biggerpockets">BiggerPockets</option>
+          <option value="facebook">Facebook</option>
+          <option value="linkedin">LinkedIn</option>
+          <option value="referral">Referral</option>
+          <option value="wholesaler">Wholesaler</option>
+          <option value="tiktok">TikTok</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="col"><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+    </div>
+
+    <button class="btn btn-primary" type="submit" style="margin-top:1rem; font-size:1rem; padding:.75rem 1.5rem">
+      Submit deal → Don calls within 15 min
+    </button>
+    <p class="muted" style="margin-top:.5rem">By submitting, you agree to be contacted. Not a loan application or commitment to lend.</p>
+  </form>
+</div>
+{% endblock %}

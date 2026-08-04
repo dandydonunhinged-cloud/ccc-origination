@@ -1,0 +1,50 @@
+{% extends "shared/base.html" %}
+{% block title %}Dashboard · CCC Origination{% endblock %}
+{% block body %}
+<div class="bar-rwb"></div>
+<div class="topbar">
+  <div class="shell row">
+    <div class="row">
+      <span class="brand">CCC Origination</span>
+      <nav>
+        <a href="/admin/">Dashboard</a>
+        <a href="/admin/pipeline/">Pipeline</a>
+        <a href="/admin/rates/">Rates</a>
+        <a href="/mortgage/">Marketing</a>
+      </nav>
+    </div>
+    <div class="row">
+      <span class="muted" style="color:#fff; opacity:.8">{{ email }}</span>
+      <a href="/admin/logout/">Logout</a>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+  <h1>Dashboard</h1>
+
+  <div class="metric-grid">
+    {% for stage, count in summary.by_stage.items() %}
+    <div class="metric"><span class="num">{{ count }}</span><span class="lbl">{{ stage.replace('_',' ') }}</span></div>
+    {% endfor %}
+  </div>
+  <div class="metric-grid" style="margin-top:1rem">
+    <div class="metric"><span class="num">{{ summary.total_funded }}</span><span class="lbl">Total funded</span></div>
+    <div class="metric"><span class="num">{{ summary.fund_rate_pct }}%</span><span class="lbl">Fund rate</span></div>
+    <div class="metric"><span class="num">${{ "%.0f"|format(summary.total_comp_cents/100) }}</span><span class="lbl">Comp to date</span></div>
+  </div>
+
+  <h2 style="margin-top:1.5rem">Today's queue</h2>
+  {% if not queue %}
+  <div class="card muted">Nothing urgent. Take a walk.</div>
+  {% else %}
+  <div class="card">
+    {% for item in queue %}
+    <div class="{{ 'sev-high' if item.severity=='high' else 'sev-med' if item.severity=='med' else 'sev-low' }}" style="padding:.5rem 0; border-bottom:1px solid var(--c-line)">
+      <a href="{{ item.url }}">{{ item.label }}</a>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

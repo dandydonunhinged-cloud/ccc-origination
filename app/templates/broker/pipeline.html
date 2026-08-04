@@ -1,0 +1,48 @@
+{% extends "shared/base.html" %}
+{% block title %}Pipeline · CCC Origination{% endblock %}
+{% block body %}
+<div class="bar-rwb"></div>
+<div class="topbar">
+  <div class="shell row">
+    <div class="row">
+      <span class="brand">CCC Origination</span>
+      <nav>
+        <a href="/admin/">Dashboard</a>
+        <a href="/admin/pipeline/">Pipeline</a>
+        <a href="/admin/rates/">Rates</a>
+        <a href="/mortgage/">Marketing</a>
+      </nav>
+    </div>
+    <div class="row">
+      <a href="/admin/logout/">Logout</a>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+  <h1>Pipeline</h1>
+  {% if not by_stage %}
+  <div class="card muted">No deals yet. They'll appear here as soon as a borrower submits the intake form.</div>
+  {% else %}
+    {% for stage, deals in by_stage.items() %}
+    <h2 style="margin-top:1rem"><span class="deal-stage {{ stage }}">{{ stage.replace('_',' ') }}</span> · {{ deals|length }}</h2>
+    <div class="card">
+      <table>
+        <thead><tr><th>Deal</th><th>Borrower</th><th>Type</th><th>Amount</th><th>Stage entered</th></tr></thead>
+        <tbody>
+        {% for d in deals %}
+        <tr>
+          <td><a href="/admin/deal/{{ d.public_id }}/">{{ d.public_id }}</a></td>
+          <td>{{ d.borrower.full_name }}</td>
+          <td>{{ d.loan_type.value.replace('_',' ') }}</td>
+          <td>${{ "%.0f"|format(d.target_loan_amount or 0) }}</td>
+          <td class="muted">{{ d.stage_entered_at.strftime('%Y-%m-%d %H:%M') if d.stage_entered_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endfor %}
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+ccc_origination.db*
+boot*.log
+boot*.err
+submit.log
+submit.err
+smoke.log
+smoke.err
+post.log
+post.err
+probe.py
+probe.out
+probe.err
+.venv/

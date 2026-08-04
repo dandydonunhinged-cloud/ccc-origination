@@ -1,0 +1,60 @@
+{% extends "shared/base.html" %}
+{% block title %}Rate sheets · CCC Origination{% endblock %}
+{% block body %}
+<div class="bar-rwb"></div>
+<div class="topbar">
+  <div class="shell row">
+    <div class="row">
+      <span class="brand">CCC Origination</span>
+      <nav>
+        <a href="/admin/">Dashboard</a>
+        <a href="/admin/pipeline/">Pipeline</a>
+        <a href="/admin/rates/">Rates</a>
+        <a href="/mortgage/">Marketing</a>
+      </nav>
+    </div>
+    <div class="row"><a href="/admin/logout/">Logout</a></div>
+  </div>
+</div>
+
+<div class="shell">
+  <h1>Rate sheets</h1>
+  <p class="muted">Capture current pricing per lender. The matching engine reads this instead of the static matrix when snapshots exist.</p>
+
+  {% for lender in lenders %}
+  <div class="card">
+    <h2>{{ lender.name }} <span class="pill">{{ lender.channel }}</span></h2>
+    {% set snaps = snaps_by_lender.get(lender.id, []) %}
+    {% if snaps %}
+    <table>
+      <thead><tr><th>Product</th><th>Rate band</th><th>Points</th><th>Captured</th></tr></thead>
+      <tbody>
+        {% for s in snaps %}
+        <tr>
+          <td>{{ s.product.name if s.product else '—' }}</td>
+          <td>{{ "%.2f"|format(s.rate_low) }}–{{ "%.2f"|format(s.rate_high) }}%</td>
+          <td>{{ s.points or '—' }}</td>
+          <td class="muted">{{ s.captured_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No snapshots yet.</p>
+    {% endif %}
+    <details style="margin-top:.5rem">
+      <summary>Add snapshot</summary>
+      <form method="post" action="/admin/rates/snapshot/" style="margin-top:.5rem; display:grid; grid-template-columns: 100px 100px 100px 100px 100px 100px; gap:.5rem; align-items:end">
+        <input type="hidden" name="lender_id" value="{{ lender.id }}">
+        <div><label>Product ID (opt)</label><input name="product_id" type="number"></div>
+        <div><label>Rate low %</label><input name="rate_low" type="number" step="0.01" required></div>
+        <div><label>Rate high %</label><input name="rate_high" type="number" step="0.01" required></div>
+        <div><label>Points</label><input name="points" type="number" step="0.01"></div>
+        <div><label>Rate lock (d)</label><input name="rate_lock_days" type="number"></div>
+        <button class="btn btn-primary" type="submit">Save</button>
+      </form>
+    </details>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

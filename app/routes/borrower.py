@@ -255,8 +255,6 @@ async def portal_deal(public_id: str, request: Request, db: Session = Depends(ge
     if deal is None or deal.borrower_id != borrower.id:
         raise HTTPException(404, "Deal not found")
     docs = db.query(Document).filter_by(deal_id=deal.id).order_by(Document.created_at.desc()).all()
-    conditions = db.query(__import__(f"{__package__}..models", fromlist=["Condition"]).Condition).filter_by(deal_id=deal.id).all() if False else None
-    # Simpler import to avoid the eval:
     from ..models import Condition
     conditions = db.query(Condition).filter_by(deal_id=deal.id).order_by(Condition.requested_at.desc()).all()
     messages = db.query(Message).filter_by(deal_id=deal.id, visible_to_borrower=True).order_by(Message.created_at.asc()).all()

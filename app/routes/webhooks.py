@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from .. import snapshots, storage
+from ..models import Lender
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -59,7 +60,7 @@ async def webhook_plaid(request: Request, db: Session = Depends(get_db)):
 @router.get("/api/rates/current.json")
 async def api_rates_current(db: Session = Depends(get_db)):
     out = []
-    for lender in db.query(__import__(f"{__package__}..models", fromlist=["Lender"]).Lender).filter_by(active=True).all():
+    for lender in db.query(Lender).filter_by(active=True).all():
         latest = snapshots.latest_for_lender(db, lender.id)
         for snap in latest:
             out.append({

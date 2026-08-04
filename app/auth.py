@@ -57,7 +57,10 @@ def resolve_session(db: Session, raw_token: str) -> Optional[str]:
         return None
     if row.revoked_at is not None:
         return None
-    if row.expires_at < datetime.now(timezone.utc):
+    # DB returns naive datetimes (SQLite). Compare in the same naive UTC frame.
+    now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    expires_naive = row.expires_at.replace(tzinfo=None) if row.expires_at.tzinfo else row.expires_at
+    if expires_naive < now_utc_naive:
         return None
     return row.user_email
 
@@ -98,7 +101,9 @@ def consume_magic_link(db: Session, raw_token: str) -> Optional[Borrower]:
         return None
     if row.used_at is not None:
         return None
-    if row.expires_at < datetime.now(timezone.utc):
+    now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    expires_naive = row.expires_at.replace(tzinfo=None) if row.expires_at.tzinfo else row.expires_at
+    if expires_naive < now_utc_naive:
         return None
     row.used_at = datetime.now(timezone.utc)
     db.commit()
@@ -174,7 +179,11 @@ def require_borrower(request: Request, db: Session = Depends(get_db)) -> Borrowe
     # (For real auth, store a borrower_session table; this is a v1.)
     h = hash_token(raw)
     link = db.query(MagicLink).filter_by(token_hash=h, purpose="login").one_or_none()
-    if link is None or link.used_at is None or link.expires_at < datetime.now(timezone.utc):
+    if link is None or link.used_at is None:
+        raise HTTPException(status_code=401, detail="Session expired")
+    expires_naive = link.expires_at.replace(tzinfo=None) if link.expires_at.tzinfo else link.expires_at
+    now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    if expires_naive < now_utc_naive:
         raise HTTPException(status_code=401, detail="Session expired")
     return db.query(Borrower).get(link.borrower_id)
 
@@ -185,6 +194,10 @@ def optional_borrower(request: Request, db: Session = Depends(get_db)) -> Option
         return None
     h = hash_token(raw)
     link = db.query(MagicLink).filter_by(token_hash=h, purpose="login").one_or_none()
-    if link is None or link.used_at is None or link.expires_at < datetime.now(timezone.utc):
+    if link is None or link.used_at is None:
+        return None
+    now_utc_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+    expires_naive = link.expires_at.replace(tzinfo=None) if link.expires_at.tzinfo else link.expires_at
+    if expires_naive < now_utc_naive:
         return None
     return db.query(Borrower).get(link.borrower_id)

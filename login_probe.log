@@ -1,0 +1,2 @@
+INFO:     127.0.0.1:55231 - "POST /admin/login/ HTTP/1.1" 303 See Other
+INFO:     127.0.0.1:55232 - "GET /admin/ HTTP/1.1" 200 OK

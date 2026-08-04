@@ -1,0 +1,2 @@
+INFO:     127.0.0.1:56734 - "POST /admin/login/ HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:56735 - "GET /admin/ HTTP/1.1" 401 Unauthorized

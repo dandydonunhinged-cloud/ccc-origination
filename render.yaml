@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: ccc-origination
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: uvicorn app.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: BROKER_EMAIL
+        value: "don@dandydon.media"
+      - key: SPACES_ACCESS_KEY
+        sync: false
+      - key: SPACES_SECRET_KEY
+        sync: false
+      - key: OLLAMA_BASE_URL
+        sync: false
+      - key: RPCCP_BASE_URL
+        sync: false
+      - key: RPCCP_API_KEY
+        sync: false
+      - key: PLAID_CLIENT_ID
+        sync: false
+      - key: PLAID_SECRET
+        sync: false
+    autoDeploy: true

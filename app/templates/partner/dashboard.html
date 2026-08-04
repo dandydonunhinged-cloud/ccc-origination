@@ -1,0 +1,93 @@
+{% extends "shared/base.html" %}
+{% block title %}Partner Portal · ClickClickClose{% endblock %}
+{% block body %}
+<div class="bar-rwb"></div>
+<div class="topbar">
+  <div class="shell row">
+    <div class="row">
+      <span class="brand">ClickClickClose · Partners</span>
+      <nav>
+        <a href="/partner/">Dashboard</a>
+        <a href="/mortgage/">Marketing</a>
+      </nav>
+    </div>
+  </div>
+</div>
+
+<div class="shell">
+  <h1>Partner dashboard</h1>
+  <p class="muted">Welcome, {{ partner.name }}. Your API key is active.</p>
+
+  <div class="metric-grid">
+    <div class="metric"><span class="num">{{ deals|length }}</span><span class="lbl">Deals submitted</span></div>
+    <div class="metric"><span class="num">{{ deals|selectattr('stage.value', 'equalto', 'post_close')|list|length }}</span><span class="lbl">Closed</span></div>
+  </div>
+
+  <h2 style="margin-top:1.5rem">Your deals</h2>
+  {% if deals %}
+  <div class="card">
+    <table>
+      <thead><tr><th>Deal</th><th>Borrower</th><th>Type</th><th>Amount</th><th>Stage</th><th>Submitted</th></tr></thead>
+      <tbody>
+        {% for d in deals %}
+        <tr>
+          <td><code>{{ d.public_id }}</code></td>
+          <td>{{ d.borrower.full_name }}</td>
+          <td>{{ d.loan_type.value.replace('_',' ') }}</td>
+          <td>${{ "%.0f"|format(d.target_loan_amount or 0) }}</td>
+          <td><span class="pill">{{ d.stage.value.replace('_',' ') }}</span></td>
+          <td class="muted">{{ d.created_at.strftime('%Y-%m-%d') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card muted">No deals yet. Submit one via the API or contact Don.</div>
+  {% endif %}
+
+  <h2 style="margin-top:1.5rem">Submit a deal</h2>
+  <div class="card">
+    <form method="post" action="/partner/submit/" style="display:grid; grid-template-columns: 1fr 1fr; gap:.75rem">
+      <input type="hidden" name="api_key" value="{{ request.headers.get('X-API-Key', '') }}">
+      <div><label>Borrower name</label><input name="full_name" type="text" required></div>
+      <div><label>Email</label><input name="email" type="email" required></div>
+      <div><label>Phone</label><input name="phone" type="tel" required></div>
+      <div><label>Credit score</label><input name="credit_score" type="number" required></div>
+      <div><label>Property address</label><input name="property_address" type="text" required></div>
+      <div><label>City</label><input name="property_city" type="text" required></div>
+      <div><label>State</label><input name="property_state" type="text" maxlength="4" required></div>
+      <div><label>Property type</label>
+        <select name="property_type" required>
+          <option value="sfr">SFR</option>
+          <option value="two_four">2-4 unit</option>
+          <option value="five_plus">5+ unit</option>
+          <option value="condo_townhome">Condo</option>
+        </select>
+      </div>
+      <div><label>Purchase price</label><input name="purchase_price" type="number" step="0.01" required></div>
+      <div><label>Target loan amount</label><input name="target_loan_amount" type="number" step="0.01" required></div>
+      <div><label>Loan type</label>
+        <select name="loan_type" required>
+          <option value="dscr_purchase">DSCR purchase</option>
+          <option value="dscr_refi">DSCR refi</option>
+          <option value="fix_flip">Fix & flip</option>
+          <option value="bridge">Bridge</option>
+        </select>
+      </div>
+      <div><label>Projected rent (DSCR)</label><input name="projected_rent" type="number" step="0.01" value="0"></div>
+      <div><label>Notes</label><textarea name="notes" rows="2"></textarea></div>
+      <div style="grid-column: 1 / -1;">
+        <button class="btn btn-primary" type="submit">Submit deal</button>
+      </div>
+    </form>
+  </div>
+
+  <h2 style="margin-top:1.5rem">Your API key</h2>
+  <div class="card">
+    <p class="muted">Use this key in the <code>X-API-Key</code> header to submit deals programmatically.</p>
+    <p><strong>Endpoint:</strong> <code>POST https://ccc-origination.onrender.com/partner/submit/</code></p>
+    <p><strong>Rate limit:</strong> 60 requests/min</p>
+  </div>
+</div>
+{% endblock %}

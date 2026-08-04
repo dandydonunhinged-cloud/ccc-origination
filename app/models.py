@@ -231,6 +231,8 @@ class Deal(Base):
     borrower       = relationship("Borrower", back_populates="deals", foreign_keys=[borrower_id])
     entity         = relationship("Entity", back_populates="deals")
     property       = relationship("Property", back_populates="deals")
+    referral_partner = relationship("Partner", back_populates="deals",
+                                     foreign_keys=[referral_partner_id])
     # referral_partner_id is a plain FK column; we look up the Borrower manually.
     # Avoids the ambiguous-FK problem with two FKs from deals to borrowers.
     documents      = relationship("Document", back_populates="deal", cascade="all, delete-orphan")
@@ -594,6 +596,25 @@ class Message(Base):
     created_at   = Column(DateTime, default=now_utc, nullable=False, index=True)
 
     deal         = relationship("Deal")
+
+
+class Partner(Base):
+    """A referral partner — wholesaler, agent, other broker who sends us deals."""
+    __tablename__ = "partners"
+
+    id              = Column(Integer, primary_key=True)
+    name            = Column(String(200), nullable=False)
+    email           = Column(String(254), nullable=False, unique=True, index=True)
+    phone           = Column(String(40))
+    company         = Column(String(200))
+    commission_rate = Column(Float, default=0.25)  # 25% of broker comp
+    api_key         = Column(String(64), unique=True, index=True)
+    active          = Column(Boolean, default=True, nullable=False)
+    created_at      = Column(DateTime, default=now_utc, nullable=False)
+    updated_at      = Column(DateTime, default=now_utc, onupdate=now_utc, nullable=False)
+
+    deals           = relationship("Deal", back_populates="referral_partner",
+                                   foreign_keys="Deal.referral_partner_id")
 
 
 class ScheduleTask(Base):

@@ -1,0 +1,25 @@
+{% extends "shared/base.html" %}
+{% block title %}Partner Login · ClickClickClose{% endblock %}
+{% block body %}
+<div class="bar-rwb"></div>
+<div class="shell" style="max-width:420px; padding-top:3rem">
+  <h1>Partner portal</h1>
+  <p class="muted">Sign in with your email and API key.</p>
+
+  {% if error %}<div class="flash flash-red">{{ error }}</div>{% endif %}
+
+  <form method="post" action="/partner/login/" class="card">
+    <div class="form-row">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" required autofocus>
+    </div>
+    <div class="form-row">
+      <label for="api_key">API key</label>
+      <input id="api_key" name="api_key" type="password" required>
+    </div>
+    <button class="btn btn-primary" type="submit">Sign in</button>
+  </form>
+
+  <p class="muted" style="margin-top:1rem">Don't have a key? <a href="/partner/register/">Register as a partner</a></p>
+</div>
+{% endblock %}

@@ -109,11 +109,13 @@ STATIC_MORTGAGE = STATIC_DIR / "mortgage"
 # In production we'll move them to a CDN; for now they're served by FastAPI
 # so the whole monolith is one process.
 
-from .routes import borrower, broker, webhooks, static_pages
+from .routes import borrower, broker, webhooks, static_pages, partners, widget
 app.include_router(borrower.router)
 app.include_router(broker.router)
 app.include_router(webhooks.router)
 app.include_router(static_pages.router)
+app.include_router(partners.router)
+app.include_router(widget.router)
 
 
 # ---------------------------------------------------------------------------

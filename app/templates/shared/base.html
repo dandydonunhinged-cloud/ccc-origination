@@ -5,7 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}CCC Origination{% endblock %}</title>
   <meta name="theme-color" content="#0A2A66">
+  <meta name="description" content="{% block meta_description %}ClickClickClose — investor loan origination. DSCR, bridge, fix-and-flip, construction loans. Close in 15 days.{% endblock %}">
+  <meta name="keywords" content="DSCR loan, investor loan, rental property loan, fix and flip financing, bridge loan, hard money, ClickClickClose">
+  <meta property="og:title" content="{% block og_title %}ClickClickClose — Investor Loan Origination{% endblock %}">
+  <meta property="og:description" content="Close your next deal in 15 days. 32+ wholesale lenders, AI-powered matching, 5-pass scenario analysis.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://clickclickclose.click">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="canonical" href="https://clickclickclose.click{% block canonical_path %}/{% endblock %}">
   <link rel="stylesheet" href="/static/app.css">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FinancialService",
+    "name": "ClickClickClose",
+    "description": "Investor mortgage origination. DSCR, bridge, fix-and-flip, construction loans.",
+    "url": "https://clickclickclose.click",
+    "areaServed": "US",
+    "foundingDate": "2026",
+    "contactPoint": {
+      "@type": "ContactPoint",
+      "telephone": "+1-409-332-9313",
+      "contactType": "sales",
+      "email": "don@dandydon.media"
+    }
+  }
+  </script>
 </head>
 <body class="{% block body_class %}{% endblock %}">
   {% block body %}{% endblock %}

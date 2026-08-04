@@ -1,11 +1,9 @@
 services:
   - type: web
     name: ccc-origination
-    runtime: python
+    runtime: docker
     region: oregon
-    plan: free
-    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: uvicorn app.app:app --host 0.0.0.0 --port $PORT
+    plan: starter
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION

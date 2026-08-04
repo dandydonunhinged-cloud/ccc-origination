@@ -89,7 +89,8 @@ def _load_similar_paid_deals(db, narrative_embedding: list[float],
     """Pull the k most similar *funded* deals so the model can reason by analogy."""
     from sqlalchemy import text
     # Use the embeddings.py search
-    results = emb.search_similar(db.connection().connection.dbapi_connection, narrative_embedding, k=k, exclude_deal_id=deal_id)
+    conn = db.connection().connection.dbapi_connection if hasattr(db, 'connection') else None
+    results = emb.search_similar(conn, narrative_embedding, k=k, exclude_deal_id=deal_id) if conn else []
     if not results:
         return []
     out = []

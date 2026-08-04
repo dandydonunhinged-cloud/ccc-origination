@@ -85,8 +85,8 @@ def run_scenario(deal_id: int, db: Session) -> dict:
 
     deal.scenario_report = report
     deal.scenario_score = score
-    if deal.stage.value == "lead_acquired":
-        deal.stage = "scenario_analyzed"
+    if deal.stage == DealStage.lead_acquired:
+        deal.stage = DealStage.scenario_analyzed
 
     db.commit()
     return report

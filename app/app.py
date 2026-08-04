@@ -98,10 +98,11 @@ async def startup():
 # Static + route registration
 # ---------------------------------------------------------------------------
 
-# Static files: the marketing /mortgage/ pages from the old hub
-STATIC_MORTGAGE = Path(__file__).resolve().parent.parent / "static" / "mortgage"
-if STATIC_MORTGAGE.exists():
-    app.mount("/mortgage/static", StaticFiles(directory=str(STATIC_MORTGAGE / "css")), name="mortgage-css")
+# Static files: app CSS + the marketing /mortgage/ pages
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+STATIC_MORTGAGE = STATIC_DIR / "mortgage"
 
 # The /mortgage/ pages themselves — register them as a Jinja2-free static
 # file mount at the top of the tree. This serves the marketing front door.

@@ -290,7 +290,7 @@ class Condition(Base):
 
     deal          = relationship("Deal", back_populates="conditions")
     submission    = relationship("Submission", back_populates="conditions")
-    documents     = relationship("Document", foreign_keys=[Document.clears_condition_id])
+    documents     = relationship("Document", foreign_keys=[Document.clears_condition_id], overlaps="clears_condition")
 
 
 class Note(Base):

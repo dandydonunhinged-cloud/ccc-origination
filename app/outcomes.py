@@ -60,7 +60,7 @@ def record_outcome(deal_id: int, outcome: str, db: Session,
     # If funded, also mark the deal closed (if not already)
     if outcome == "funded" and deal.closed_at is None:
         deal.closed_at = datetime.now(timezone.utc)
-        deal.stage = "post_close"
+        deal.stage = DealStage.post_close
         db.add(Event(
             deal_id=deal_id,
             kind="stage_change",

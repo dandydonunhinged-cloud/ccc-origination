@@ -21,6 +21,7 @@ Endpoints:
   GET  /admin/rates/                          — latest rate sheet snapshots
 """
 import logging
+from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Request, Form, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
@@ -42,7 +43,7 @@ from .. import scenario_ai, outcomes, snapshots, playbooks
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-TEMPLATES_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent / "templates"
+TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 

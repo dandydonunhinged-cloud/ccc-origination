@@ -9,6 +9,14 @@
     <p>Deal <code>{{ deal.public_id }}</code> is in. The 5-pass AI is running the scenario analysis right now.</p>
     <p>You'll get an email with a sign-in link to the borrower portal so you can see what's happening on your deal.</p>
     <p>If you don't hear from Don within 15 minutes during business hours, call (409) 332-9313.</p>
+
+    <div class="callout" style="margin-top:1.5rem">
+      <h3>Know another investor?</h3>
+      <p>Share this link — they'll get the same 15-minute response and AI-powered matching:</p>
+      <p><input type="text" readonly value="https://clickclickclose.click/submit/?ref={{ deal.public_id }}" style="font-size:13px" onclick="this.select()"></p>
+      <p style="font-size:12px;color:#5A6478">You'll earn a referral credit if they close a deal.</p>
+    </div>
+
     <p style="margin-top:1rem">
       <a class="btn btn-primary" href="/mortgage/">Back to overview</a>
       <a class="btn" href="/portal/">Borrower portal</a>

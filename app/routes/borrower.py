@@ -82,9 +82,13 @@ async def submit_form_post(
     loan_type: str = Form(...),
     target_close: str = Form(""),
     lead_source: str = Form("website"),
+    ref: str = Form(""),
     notes: str = Form(""),
 ):
     """Create the Deal, kick off the AI scenario engine."""
+    # Track referral from ref parameter
+    if ref:
+        lead_source = f"referral:{ref}"
     # Upsert the Borrower (by email)
     borrower = db.query(Borrower).filter_by(email=email).one_or_none()
     if borrower is None:

@@ -158,6 +158,13 @@ async def partner_rotate_key(
 # Public partner registration (self-serve)
 # ---------------------------------------------------------------------------
 
+@router.get("/partner/register/", response_class=HTMLResponse)
+async def partner_register_page(request: Request, error: str = "", success: str = "", api_key: str = ""):
+    return templates.TemplateResponse("partner/register.html",
+                                      {"request": request, "error": error, "success": success,
+                                       "api_key": api_key, "config": config})
+
+
 @router.post("/partner/register/")
 async def partner_register(
     request: Request,
@@ -169,17 +176,17 @@ async def partner_register(
 ):
     existing = db.query(Partner).filter_by(email=email).one_or_none()
     if existing:
-        raise HTTPException(409, "Partner with this email already exists")
+        return templates.TemplateResponse("partner/register.html",
+                                          {"request": request, "error": "Partner with this email already exists. <a href='/partner/login/'>Sign in</a>.",
+                                           "success": "", "api_key": "", "config": config},
+                                          status_code=409)
     api_key = _gen_api_key()
     partner = Partner(
-        name=name, email=email, phone=phone, company=company,
+        name=name, email=email, phone=phone or None, company=company or None,
         api_key=hash_token(api_key), active=True,
     )
     db.add(partner)
     db.commit()
-    return JSONResponse({
-        "status": "ok",
-        "partner_id": partner.id,
-        "api_key": api_key,
-        "note": "Save this API key — it won't be shown again.",
-    })
+    return templates.TemplateResponse("partner/register.html",
+                                      {"request": request, "error": "", "success": "true",
+                                       "api_key": api_key, "config": config})

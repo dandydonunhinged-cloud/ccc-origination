@@ -19,6 +19,7 @@
   <p class="muted">Don calls within 15 minutes during business hours. The 5-pass AI runs the second you submit.</p>
 
   <form method="post" action="/submit/" class="card">
+    <input type="hidden" name="ref" value="{{ request.query_params.get('ref', '') }}">
     <h2>Borrower</h2>
     <div class="row">
       <div class="col"><label>Full name</label><input name="full_name" type="text" required></div>

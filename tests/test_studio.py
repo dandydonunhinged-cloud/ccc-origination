@@ -1,0 +1,357 @@
+"""Studio pipeline tests. The model is mocked so every stage runs on
+realistic-shaped output without network access."""
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+
+import pytest
+
+_TMP = tempfile.mkdtemp(prefix="studio-test-")
+os.environ["DATABASE_URL"] = f"sqlite:///{_TMP}/test.db"
+os.environ["ADMIN_PASSWORD"] = "pw"
+os.environ["STUDIO_MEDIA_DIR"] = f"{_TMP}/media"
+os.environ["STUDIO_LLM_PROVIDER"] = "offline"
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from app.app import app  # noqa: E402
+from app.db import SessionLocal  # noqa: E402
+from app.studio import engine, llm, integrations  # noqa: E402
+from app.studio.models import StudioProject, StudioTask, StudioSource, StudioAsset  # noqa: E402
+
+
+@pytest.fixture(scope="module")
+def client():
+    with TestClient(app, base_url="https://testserver") as c:
+        r = c.post("/admin/login/", data={"email": "don@dandydon.media", "password": "pw", "next": "/studio/"},
+                   follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"] == "/studio/"
+        yield c
+
+
+@pytest.fixture
+def db():
+    s = SessionLocal()
+    yield s
+    s.close()
+
+
+# ---------------------------------------------------------------------------
+# Canned model output per output contract
+# ---------------------------------------------------------------------------
+
+SEGMENT_SCRIPT = """[VISUAL: S{sid} — highlight "Sec. 4(b)"]
+HOST: So the bill says one thing {{S{sid}}}.
+[BEAT]
+CORRESPONDENT (Jordan): And does another, obviously. {{S{sid}}}
+[SFX: record scratch]
+HOST: Right."""
+
+
+def fake_complete(system, messages, model="", tools=None, effort="high", max_tokens=0):
+    prompt = messages[-1]["content"]
+    contract = prompt.split("OUTPUT_CONTRACT:")[-1].strip().split()[0] if "OUTPUT_CONTRACT:" in prompt else "text"
+    cites = [{"url": "https://www.congress.gov/bill/1", "title": "Bill"}]
+    if contract == "investigate":
+        body = {"verdict": "substantiated", "confidence": 80, "summary": "Well documented.",
+                "evidence": [{"claim": "c1", "status": "proven", "title": "Bill", "publisher": "Congress",
+                              "date": "2025", "kind": "bill", "url": "https://www.congress.gov/bill/1",
+                              "quote": "Sec. 4(b)"},
+                             {"claim": "c2", "status": "alleged", "title": "Made up", "url": "https://example.com/x"}],
+                "counter_evidence": [],
+                "topics": [{"title": "Topic A", "angle": "a", "why_it_matters": "w",
+                            "key_documents": ["https://www.congress.gov/bill/1"], "strength": "strong"},
+                           {"title": "Topic B", "angle": "b", "key_documents": [], "strength": "thin"}],
+                "gaps": ["g"]}
+    elif contract == "research":
+        body = {"summary": "Evidence file.", "sources": [
+            {"title": "IG report", "publisher": "OIG", "date": "2025", "kind": "gov_report",
+             "url": "https://oig.example.gov/r.pdf", "quote": "found violations", "supports": "c1"}],
+            "timeline": [{"date": "2025-01-01", "event": "e", "url": ""}],
+            "key_facts": [{"fact": "f", "status": "proven", "url": "https://oig.example.gov/r.pdf"}],
+            "open_questions": []}
+    elif contract == "story":
+        body = {"logline": "L", "thesis": "T", "bomb": "B", "segments": [
+            {"title": "Cold open", "format": "cold_open", "minutes": 1, "angle": "hook", "beats": ["b"]},
+            {"title": "Deep dive", "format": "deep_dive", "minutes": 8, "angle": "docs", "beats": ["b"]},
+            {"title": "Correspondent", "format": "correspondent", "minutes": 3, "angle": "bit", "beats": []},
+            {"title": "Convergence", "format": "convergence", "minutes": 1.5, "angle": "bomb", "beats": []}]}
+    elif contract == "segment" or contract == "edit":
+        sid = prompt.split("[S")[1].split("]")[0] if "[S" in prompt else "1"
+        text = SEGMENT_SCRIPT.format(sid=sid)
+        if contract == "edit":
+            text = "===== SEGMENT 1: Cold open =====\n" + text
+        return llm.LLMResult(text=text, model="mock", provider="mock")
+    elif contract == "standards":
+        body = {"verdict": "clear", "summary": "ok", "issues": [{"quote": "x", "problem": "p", "severity": "low", "fix": "f"}]}
+    elif contract == "visuals":
+        sid = prompt.split("[S")[1].split("]")[0]
+        body = {"shots": [{"segment_index": 1, "cue": "bill", "visual_type": "document_highlight", "source_id": f"S{sid}",
+                           "highlight_text": "Sec. 4(b)", "caption": "The bill"},
+                          {"segment_index": 1, "cue": "money", "visual_type": "chart", "source_id": None, "caption": "gap"}]}
+    elif contract == "animation":
+        body = {"pieces": [{"after_segment_index": 0, "duration_sec": 3, "concept": "wipe", "prompt": "p"}]}
+    elif contract == "music":
+        body = {"cues": [{"placement": "bed", "mood": "tense", "bpm": 90, "level_db": -22}]}
+    elif contract == "social":
+        body = {"youtube": {"title": "YT", "caption": "cap", "hashtags": "#a"}, "x": {"caption": "short"}}
+    else:
+        return llm.LLMResult(text="free text reply", model="mock", provider="mock")
+    return llm.LLMResult(text="Here you go:\n```json\n" + json.dumps(body) + "\n```", model="mock",
+                         provider="mock", citations=cites)
+
+
+@pytest.fixture
+def mock_llm(monkeypatch):
+    monkeypatch.setattr(llm, "complete", fake_complete)
+    monkeypatch.setattr(llm, "provider", lambda: "mock")
+    # Don't run tasks in background threads during tests; run_stage() runs them inline.
+    monkeypatch.setattr(engine, "_run_in_thread", lambda task_id: engine._running.discard(task_id))
+
+
+def run_stage(db, project_id, stage):
+    t = db.query(StudioTask).filter_by(project_id=project_id, stage=stage).order_by(StudioTask.rank).first()
+    engine.run_task(db, t.id)
+    db.expire_all()
+    return db.get(StudioTask, t.id)
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+def test_requires_login():
+    with TestClient(app, base_url="https://testserver") as anon:
+        r = anon.get("/studio/", follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].startswith("/admin/login/?next=/studio/")
+        assert anon.post("/studio/api/reorder", json={}).status_code == 401
+
+
+def test_login_next_rejects_offsite():
+    with TestClient(app, base_url="https://testserver") as c:
+        r = c.post("/admin/login/", data={"email": "a@b.c", "password": "pw", "next": "//evil.com"},
+                   follow_redirects=False)
+        assert r.headers["location"] == "/admin/"
+
+
+def test_pages_render(client):
+    for path in ["/studio/", "/studio/new/series/", "/studio/new/episode/", "/studio/new/documentary/",
+                 "/studio/new/project/", "/studio/specialists/", "/studio/settings/"]:
+        assert client.get(path).status_code == 200, path
+
+
+def test_intake_question_flow(client):
+    answers = []
+    seen = []
+    for _ in range(20):
+        nxt = client.post("/studio/api/intake/next", json={"kind": "series", "answers": answers}).json()
+        if nxt.get("done"):
+            break
+        seen.append(nxt["question"])
+        answers.append({"q": nxt["question"], "a": "answer", "followup": nxt["followup"]})
+    assert len(seen) == 8 and "series about" in seen[0]
+
+
+def test_series_to_episodes(client, db, mock_llm):
+    r = client.post("/studio/api/intake/create", json={"kind": "series", "answers": [
+        {"q": "What's the series about?", "a": "The corruption of the Trump administration"},
+        {"q": "Claim?", "a": "Officials used office for private gain"}]})
+    sid = r.json()["id"]
+    # the investigation auto-starts in a thread; run it synchronously to make the test deterministic
+    engine._running.clear()
+    inv = run_stage(db, sid, "investigate")
+    assert inv.status == "review", inv.error
+    series = db.get(StudioProject, sid)
+    assert series.title == "The corruption of the Trump administration"
+    assert series.data["investigation"]["verdict"] == "substantiated"
+    assert [t["title"] for t in series.data["topics"]] == ["Topic A", "Topic B"]
+    flagged = [s for s in series.sources if s.url == "https://example.com/x"][0]
+    assert flagged.supports.startswith("[URL not seen in search results")
+
+    # Spock ranks → reverse order won't break; then exclude Topic B and lock
+    topics = series.data["topics"]
+    topics[1]["include"] = False
+    assert client.post(f"/studio/api/project/{sid}/data", json={"topics": topics}).status_code == 200
+    r = client.post(f"/studio/api/project/{sid}/lock-episodes")
+    created = r.json()["created"]
+    assert [c["title"] for c in created] == ["Topic A"]
+    db.expire_all()
+    ep = db.get(StudioProject, created[0]["id"])
+    assert ep.parent_id == sid and ep.kind == "episode"
+    assert [s.url for s in ep.sources] == ["https://www.congress.gov/bill/1"]  # seeded from key_documents
+    assert all(t.status == "done" for t in db.get(StudioProject, sid).tasks)
+    # locking again doesn't duplicate
+    assert client.post(f"/studio/api/project/{sid}/lock-episodes").json()["created"] == []
+
+
+def test_full_episode_pipeline(client, db, mock_llm, monkeypatch):
+    r = client.post("/studio/api/intake/create", json={"kind": "episode", "answers": [
+        {"q": "About?", "a": "The bill that does the opposite"}]})
+    pid = r.json()["id"]
+    engine._running.clear()
+
+    assert run_stage(db, pid, "research").status == "review"
+    story = run_stage(db, pid, "story")
+    assert story.status == "review"
+    ep = db.get(StudioProject, pid)
+    assert [s.format for s in ep.segments] == ["cold_open", "deep_dive", "correspondent", "convergence"]
+    writers = [t for t in ep.tasks if t.stage == "write"]
+    assert [t.specialist for t in writers] == ["headline_writer", "segment_writer", "correspondent_writer",
+                                               "closer_writer"]
+    # writer tasks sit between story and edit
+    edit = next(t for t in ep.tasks if t.stage == "edit")
+    assert all(story.rank < w.rank < edit.rank for w in writers)
+
+    # edit refuses until every segment has a script
+    t = run_stage(db, pid, "edit")
+    assert t.status == "blocked" and "without a script" in t.error
+    for w in writers:
+        engine.run_task(db, w.id)
+    db.expire_all()
+    assert all(s.script for s in db.get(StudioProject, pid).segments)
+    assert run_stage(db, pid, "edit").status == "review"
+    assert run_stage(db, pid, "standards").status == "review"
+
+    scripts = run_stage(db, pid, "scripts")
+    assert scripts.status == "done"
+    ep = db.get(StudioProject, pid)
+    clean = next(a for a in ep.assets if a.kind == "script_clean").body
+    stage = next(a for a in ep.assets if a.kind == "script_stage").body
+    assert "[VISUAL" in stage and "{S" in stage
+    assert "[" not in clean and "{" not in clean and "HOST:" not in clean and "=====" not in clean
+    assert "So the bill says one thing." in clean
+
+    # voice without OmniVoice → blocked with a clear message
+    monkeypatch.delenv("OMNIVOICE_URL", raising=False)
+    v = run_stage(db, pid, "voice")
+    assert v.status == "blocked" and "OMNIVOICE_URL" in v.error
+
+    vis = run_stage(db, pid, "visuals")
+    assert vis.status == "review"
+    shots = [a for a in db.get(StudioProject, pid).assets if a.kind == "visual"]
+    assert sorted(a.status for a in shots) == ["needs_sourcing", "ready"]
+    assert all(a.segment_id for a in shots)
+
+    assert run_stage(db, pid, "animation").status == "review"
+    assert run_stage(db, pid, "music").status == "review"
+    tr = run_stage(db, pid, "transparency")
+    assert "/studio/p/" in tr.output
+
+    rend = run_stage(db, pid, "render")
+    manifest = json.loads(next(a for a in db.get(StudioProject, pid).assets if a.kind == "manifest").body)
+    assert manifest["layout"]["main"] == [0, 0, 1440, 810]
+    assert len(manifest["visuals"]) == 1  # the unsourced shot is excluded
+    assert any("no verified source" in w for w in manifest["warnings"])
+    assert rend.status in ("review", "blocked")
+
+    pub = run_stage(db, pid, "publish")
+    posts = db.get(StudioProject, pid).posts
+    assert len(posts) == 11 and pub.status == "review"
+    assert next(p for p in posts if p.platform == "youtube").title == "YT"
+
+    # sending without OnlySocial configured → clear error
+    for p in posts[:2]:
+        client.patch(f"/studio/api/post/{p.id}", json={"status": "approved"})
+    r = client.post(f"/studio/api/project/{pid}/publish")
+    assert r.status_code == 409
+
+    # pages render with a fully-populated episode
+    assert client.get(f"/studio/project/{pid}/").status_code == 200
+    assert client.get(f"/studio/episode/{pid}/player/").status_code == 200
+    pub_id = db.get(StudioProject, pid).public_id
+    with TestClient(app, base_url="https://testserver") as anon:
+        page = anon.get(f"/studio/p/{pub_id}/sources/")
+        assert page.status_code == 200 and "oig.example.gov" in page.text
+
+
+def test_reorder_and_move_between_columns(client, db):
+    pid = client.post("/studio/api/project", json={"kind": "project", "title": "Website relaunch"}).json()["id"]
+    ids = [client.post(f"/studio/api/project/{pid}/task", json={"title": f"T{i}"}).json()["id"] for i in range(3)]
+    # move T2 in front of T0
+    client.post("/studio/api/reorder", json={"entity": "task", "ids": [ids[2], ids[0], ids[1]]})
+    db.expire_all()
+    ordered = [t.title for t in sorted(db.get(StudioProject, pid).tasks, key=lambda t: t.rank)]
+    assert ordered == ["T2", "T0", "T1"]
+    # drag T0 into the review column
+    client.post("/studio/api/reorder", json={"entity": "task", "ids": [ids[0]], "status": "review", "moved": ids[0]})
+    db.expire_all()
+    assert db.get(StudioTask, ids[0]).status == "review"
+    assert db.get(StudioTask, ids[1]).status == "todo"
+    # projects: prioritise to top + priority label
+    other = client.post("/studio/api/project", json={"kind": "project", "title": "Other"}).json()["id"]
+    client.post("/studio/api/reorder", json={"entity": "project", "ids": [other, pid]})
+    client.patch(f"/studio/api/project/{other}", json={"priority": "P1"})
+    db.expire_all()
+    assert db.get(StudioProject, other).rank < db.get(StudioProject, pid).rank
+    assert db.get(StudioProject, other).priority == "P1"
+
+
+def test_edit_validation(client):
+    pid = client.post("/studio/api/project", json={"kind": "project", "title": "X"}).json()["id"]
+    assert client.patch(f"/studio/api/project/{pid}", json={"status": "nope"}).status_code == 400
+    assert client.patch(f"/studio/api/project/{pid}", json={"public_id": "x"}).status_code == 400
+    assert client.patch(f"/studio/api/project/{pid}", json={"parent_id": pid}).status_code == 400
+    assert client.patch("/studio/api/specialist/investigator", json={"model": "claude-sonnet-5"}).status_code == 200
+    assert client.delete(f"/studio/api/project/{pid}").status_code == 200
+    assert client.get(f"/studio/api/project/{pid}").status_code == 404
+
+
+def test_media_path_traversal_blocked(client):
+    assert client.get("/studio/media/../../etc/passwd").status_code == 404
+    assert client.get("/studio/media/%2e%2e/test.db").status_code == 404
+
+
+def test_media_auth(client):
+    secret = integrations.media_path("proj123", "narration.mp3")
+    secret.write_bytes(b"x")
+    logo = integrations.media_path("_brand", "logo.png")
+    logo.write_bytes(b"x")
+    assert client.get("/studio/media/proj123/narration.mp3").status_code == 200
+    with TestClient(app, base_url="https://testserver") as anon:
+        assert anon.get("/studio/media/_brand/logo.png").status_code == 200
+        r = anon.get("/studio/media/_brand/%2e%2e/proj123/narration.mp3", follow_redirects=False)
+        assert r.status_code == 303  # escaping _brand/ requires login
+        assert anon.get("/studio/media/proj123/narration.mp3", follow_redirects=False).status_code == 303
+
+
+def test_extract_json():
+    assert llm.extract_json('blah ```json\n{"a": 1}\n``` tail') == {"a": 1}
+    assert llm.extract_json('prefix {"a": [1, 2]} suffix') == {"a": [1, 2]}
+    assert llm.extract_json("no json here") is None
+
+
+def test_chunk_text():
+    text = ("Sentence one. " * 300).strip()
+    chunks = integrations.chunk_text(text, limit=500)
+    assert all(len(c) <= 500 for c in chunks) and "".join(chunks).count("Sentence") == 300
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
+def test_ffmpeg_render(db, tmp_path):
+    from app.studio import render
+    p = StudioProject(kind="episode", title="Render test", data={})
+    db.add(p)
+    db.flush()
+    voice = tmp_path / "voice.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=3", str(voice)],
+                   check=True, capture_output=True)
+    img = tmp_path / "doc.png"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=white:s=800x600", "-frames:v", "1", str(img)],
+                   check=True, capture_output=True)
+    src = StudioSource(project_id=p.id, url="https://example.gov/doc", title="Doc")
+    db.add(src)
+    db.flush()
+    db.add(StudioAsset(project_id=p.id, kind="audio", path=str(voice), url="/x"))
+    db.add(StudioAsset(project_id=p.id, kind="visual", path=str(img), source_id=src.id, status="ready",
+                       title="The doc"))
+    db.commit()
+    db.refresh(p)
+    m = render.build_manifest(p, {"name": "DanDon Media"}, [{"label": "YouTube", "url": "https://yt"}],
+                              "https://x/studio/p/abc/sources/")
+    assert m["duration_source"] == "audio" and 2.5 < m["duration_sec"] < 3.5
+    out = tmp_path / "ep.mp4"
+    report = render.render_mp4(m, out)
+    assert out.exists() and out.stat().st_size > 1000 and report["visuals_used"] == 1
+    assert 2.5 < integrations.probe_duration(out) < 3.6

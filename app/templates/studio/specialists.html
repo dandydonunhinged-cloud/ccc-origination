@@ -1,0 +1,56 @@
+{% extends "studio/base.html" %}
+{% set nav = 'specialists' %}
+{% block title %}Specialists{% endblock %}
+{% block body %}
+<div class="row spread">
+  <div>
+    <div class="eyebrow">The model roster</div>
+    <h1>Specialists</h1>
+    <p class="muted small">Each pipeline step is assigned to the specialist built for that kind of work. Edit a specialist's model, effort, tools and system prompt and every future task it runs picks it up. Research roles use live web search/fetch so their sources are real pages they actually opened.</p>
+  </div>
+</div>
+
+<ul class="sortable" data-entity="specialist">
+  {% for s in specialists %}
+  <li data-id="{{ s.key }}" draggable="true" style="flex-direction:column;align-items:stretch">
+    <div class="row">
+      <span class="handle">⠿</span>
+      <input class="inline" style="font-weight:800;max-width:260px" data-e="specialist:{{ s.key }}:name" value="{{ s.name }}">
+      <input class="inline grow" data-e="specialist:{{ s.key }}:role" value="{{ s.role }}">
+      <span class="pill mono">{{ s.key }}</span>
+      <label class="row small" style="margin:0;text-transform:none"><input type="checkbox" data-e="specialist:{{ s.key }}:enabled" {{ 'checked' if s.enabled }}> enabled</label>
+    </div>
+    <details>
+      <summary class="small muted">{{ s.description }}</summary>
+      <div class="grid grid-halves">
+        <div><label>Model</label><input class="mono" data-e="specialist:{{ s.key }}:model" value="{{ s.model }}" list="models"></div>
+        <div><label>Effort</label><select data-e="specialist:{{ s.key }}:effort">{% for e in ['low', 'medium', 'high', 'xhigh', 'max'] %}<option {{ 'selected' if e == s.effort }}>{{ e }}</option>{% endfor %}</select></div>
+        <div><label>Tools (one per line: web_search, web_fetch)</label><textarea data-type="lines" data-e="specialist:{{ s.key }}:tools" style="min-height:48px">{{ (s.tools or []) | join('\n') }}</textarea></div>
+        <div><label>Description</label><textarea data-e="specialist:{{ s.key }}:description" style="min-height:48px">{{ s.description }}</textarea></div>
+      </div>
+      <label>System prompt</label>
+      <textarea class="script" data-e="specialist:{{ s.key }}:system_prompt" style="min-height:140px" placeholder="{{ 'This step runs deterministic code — no prompt needed.' if s.key in ('script_formatter', 'voice_producer', 'transparency_curator', 'compositor') }}">{{ s.system_prompt }}</textarea>
+    </details>
+  </li>
+  {% endfor %}
+</ul>
+<datalist id="models"><option value="claude-opus-5"><option value="claude-fable-5-1"><option value="claude-sonnet-5"><option value="claude-haiku-4-5"></datalist>
+
+<details class="panel" style="margin-top:1rem"><summary><b>+ Add a specialist</b></summary>
+  <div class="grid grid-halves" style="margin-top:.5rem">
+    <div><label>Key (e.g. cold_open_writer)</label><input id="ns-key"></div>
+    <div><label>Name</label><input id="ns-name"></div>
+    <div><label>Role</label><input id="ns-role"></div>
+  </div>
+  <button class="btn btn-primary btn-xs" style="margin-top:.5rem" id="ns-add">Add</button>
+</details>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("ns-add").onclick = async () => {
+    const v = (id) => document.getElementById(id).value.trim();
+    await Studio.api("POST", "/studio/api/specialist", { key: v("ns-key"), name: v("ns-name"), role: v("ns-role") });
+    location.reload();
+  };
+});
+</script>
+{% endblock %}

@@ -1,0 +1,126 @@
+{% extends "studio/base.html" %}
+{% block title %}New {{ kind }}{% endblock %}
+{% block body %}
+{% set labels = {'series': "Let's find a series", 'episode': "Let's create an episode", 'documentary': "Let's create a documentary", 'project': "Track a project"} %}
+<div class="grid grid-2">
+  <section class="panel">
+    <div class="eyebrow">Intake with Spock</div>
+    <h1>{{ labels[kind] }}</h1>
+    <p class="muted small">Spock asks leading questions until there's enough to act on. When you're done,
+      {% if kind in ('series', 'documentary') %}the Investigator starts checking the claim straight away.
+      {% elif kind == 'episode' %}the Research Analyst starts building the evidence file straight away.
+      {% else %}your tasks go straight onto the board.{% endif %}</p>
+
+    {% if kind == 'episode' and series %}
+    <label for="parent">Part of a series?</label>
+    <select id="parent">
+      <option value="">— standalone episode —</option>
+      {% for s in series %}<option value="{{ s.id }}" {{ 'selected' if parent == s.id }}>{{ s.title }}</option>{% endfor %}
+    </select>
+    {% endif %}
+
+    <div class="chat" id="chat" style="margin-top:1rem"></div>
+    <div id="answerbox">
+      <div class="composer">
+        <textarea id="answer" placeholder="Type your answer… (Ctrl/⌘+Enter to send)"></textarea>
+        <button class="btn btn-primary" id="send">Send</button>
+      </div>
+      <div class="row" style="margin-top:.5rem">
+        <button class="btn btn-ghost btn-xs" id="skip">Skip question</button>
+        <button class="btn btn-ghost btn-xs" id="finish">That's enough — build it</button>
+        <span class="small muted" id="progress"></span>
+      </div>
+    </div>
+
+    <div id="buildbox" style="display:none; margin-top:1rem">
+      <label for="title">Working title (optional — we don't need a name yet)</label>
+      <input id="title" placeholder="Leave blank to use your first answer">
+      <div class="row" style="margin-top:.8rem">
+        <button class="btn btn-primary" id="build">Build it & start the pipeline</button>
+        <button class="btn btn-ghost" id="more">Keep talking</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <h2>What happens next</h2>
+    <ol class="small">
+      {% if kind == 'series' %}
+      <li><b>Investigator</b> tests the claim against the public record and returns a verdict, the evidence, and candidate episode topics.</li>
+      <li>You and <b>Spock</b> fine-tune and rank the topics. Lock the order and the episodes are created.</li>
+      <li>Each episode then runs the full production pipeline.</li>
+      {% elif kind == 'project' %}
+      <li>Your answers become the brief; each line of your last answer becomes a task.</li>
+      <li>Rank it against everything else on Mission control.</li>
+      {% else %}
+      {% if kind == 'documentary' %}<li><b>Investigator</b> checks the claim holds up.</li>{% endif %}
+      <li><b>Research Analyst</b> collects substantiating documents.</li>
+      <li><b>Investigative Journalist</b> builds the story and the segment rundown (Stewart Doctrine).</li>
+      <li>Each segment gets its own <b>writer</b>; the <b>Head Writer</b> assembles the episode.</li>
+      <li><b>Standards Editor</b> fact-checks; two scripts (stage + clean TTS); <b>OmniVoice</b> voices it.</li>
+      <li>Real document visuals, animated connective tissue, music bed, transparency page.</li>
+      <li>Composed in the DanDon layout, rendered, and posted to every platform via <b>OnlySocial</b>.</li>
+      {% endif %}
+    </ol>
+  </aside>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const kind = {{ kind|tojson }};
+  const answers = [];
+  let current = { question: {{ first_question|tojson }}, followup: false };
+  const chat = document.getElementById("chat");
+  const input = document.getElementById("answer");
+  const bubble = (role, text) => {
+    const d = document.createElement("div");
+    d.className = "msg " + role;
+    d.innerHTML = `<span class="who">${role === "user" ? "You" : "Spock"}</span>${Studio.esc(text)}`;
+    chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+  };
+  const showDone = () => {
+    document.getElementById("answerbox").style.display = "none";
+    document.getElementById("buildbox").style.display = "block";
+    bubble("assistant", answers.length ? "I have enough to begin. Give it a working title if you like, then build it." :
+      "Answer at least one question first.");
+  };
+  const ask = (q) => { current = q; bubble("assistant", q.question);
+    document.getElementById("progress").textContent = q.step ? `Question ${q.step} of ${q.of}${q.followup ? " (follow-up)" : ""}` : "";
+    input.focus(); };
+  bubble("assistant", current.question);
+
+  async function advance(text) {
+    answers.push({ q: current.question, a: text, followup: !!current.followup });
+    document.getElementById("send").disabled = true;
+    try {
+      const nxt = await Studio.api("POST", "/studio/api/intake/next", { kind, answers });
+      if (nxt.done) showDone(); else ask(nxt);
+    } finally { document.getElementById("send").disabled = false; }
+  }
+  document.getElementById("send").onclick = () => {
+    const text = input.value.trim(); if (!text) return;
+    bubble("user", text); input.value = ""; advance(text);
+  };
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) document.getElementById("send").click(); });
+  document.getElementById("skip").onclick = () => { bubble("user", "(skipped)"); advance(""); };
+  document.getElementById("finish").onclick = showDone;
+  document.getElementById("more").onclick = () => {
+    document.getElementById("answerbox").style.display = "block";
+    document.getElementById("buildbox").style.display = "none";
+    bubble("assistant", "Go on — what else should I know?");
+    current = { question: "Anything else I should know?", followup: true };
+  };
+  document.getElementById("build").onclick = async (e) => {
+    if (!answers.some((a) => a.a)) { Studio.toast("Answer at least one question first.", true); return; }
+    e.target.disabled = true; e.target.textContent = "Building…";
+    const parent = document.getElementById("parent");
+    try {
+      const res = await Studio.api("POST", "/studio/api/intake/create", {
+        kind, answers, title: document.getElementById("title").value.trim(),
+        parent_id: parent && parent.value ? Number(parent.value) : null });
+      location.href = res.url;
+    } catch (err) { e.target.disabled = false; e.target.textContent = "Build it & start the pipeline"; }
+  };
+});
+</script>
+{% endblock %}

@@ -110,3 +110,59 @@ The service degrades gracefully when optional deps are missing:
 - No Ollama → hash-based pseudo-embeddings + deterministic local scorer
 - No DO Spaces → document upload endpoint still works (records the metadata)
 - No Plaid → reserve verification is a stub (UI shows the structure)
+
+## Studio — DanDon Media content production pipeline (`/studio/`)
+
+A project tracker and an AI production pipeline for satirical-investigative
+video. It sits behind the same admin login as `/admin/`.
+
+### What it does
+
+- **Mission control** (`/studio/`): every project ranked in one list. Drag to
+  reorder, or use ⤒ ▲ ▼ ⤓ to prioritize or deprioritize. Each row has a P1–P4
+  priority, a status, the current stage and a progress bar. Episodes nest under
+  their series. The work queue shows everything running, waiting for review or blocked.
+- **Start buttons**: *Let's find a series*, *Let's create an episode*,
+  *Let's create a documentary*, *Track a project*. Each starts an intake
+  interview with **Spock**. Spock asks leading questions and follows up on vague
+  answers, then the project is built and its first model step starts.
+- **Series flow**: the Investigator checks the claim against the public record
+  and returns a verdict, evidence, counter-evidence and candidate topics. You fine-tune
+  and rank the topics with Spock (or have Spock rank them), then lock the order,
+  which creates the episodes.
+- **Episode / documentary pipeline**. Every step is a task assigned to a specialist:
+  research → story & rundown (Stewart Doctrine) → one writer per segment →
+  head writer/editor (12–15 min) → fact-check → two scripts (stage directions +
+  clean TTS) → OmniVoice narration → real-document visuals (every shot tied to a
+  source) → animated connective tissue → music bed → public transparency page →
+  render in the DanDon layout → per-platform posts → OnlySocial.
+- **Board** per project: To do / In progress / Review / Done / Blocked. Drag
+  cards between columns or use ◀ ▶ to move them back or forward. ▲ ▼ moves a task in
+  front of or behind another. Every field is editable, and tasks can be added or deleted.
+- **Autopilot**: approves each model step automatically and starts the next one.
+  It stops on errors, on high-severity fact-check issues and on human steps.
+- **Specialists** (`/studio/specialists/`): the model roster. Model, effort,
+  tools and system prompt are editable for each role.
+- **Broadcast player** (`/studio/episode/<id>/player/`): the render layout
+  (3/4 visual, links bar under it, host animation or logo upper right, clickable
+  sources link under that) playing the edit list against the narration.
+- **Transparency page** (`/studio/p/<public_id>/sources/`, public): every source
+  used, with the exact passage shown on screen.
+
+### Configuration
+
+| Env var | Purpose |
+|---|---|
+| `ANTHROPIC_API_KEY` | Claude for all specialists (research roles use live web search/fetch). Without it the pipeline still runs with clearly labelled placeholder drafts. |
+| `OMNIVOICE_URL`, `OMNIVOICE_API_KEY` | OmniVoice server with the OpenAI-compatible `POST /v1/audio/speech` endpoint |
+| `ONLYSOCIAL_TOKEN`, `ONLYSOCIAL_WORKSPACE` | OnlySocial API token and workspace UUID. Link each platform to its account id in Studio → Settings |
+| `STUDIO_MEDIA_DIR` | Where narration, uploads and renders are stored (default `./studio_media`). Point it at a persistent disk in production |
+
+The MP4 render uses `ffmpeg`, which is installed in the Docker image.
+
+### Tests
+
+```bash
+pip install -r requirements.txt pytest
+python -m pytest tests -q
+```

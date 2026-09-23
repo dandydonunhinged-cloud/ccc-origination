@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>{% block title %}Studio{% endblock %} · DanDon Media Studio</title>
+  <link rel="icon" href="/static/studio/dandon-logo.svg">
+  <link rel="stylesheet" href="/static/studio/studio.css">
+  <script src="/static/studio/studio.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+  <div class="in">
+    <a class="brandmark" href="/studio/"><span class="dot"></span>DanDon Media Studio</a>
+    <nav>
+      <a href="/studio/" class="{{ 'on' if nav == 'home' }}">Mission control</a>
+      <a href="/studio/new/series/">+ Series</a>
+      <a href="/studio/new/episode/">+ Episode</a>
+      <a href="/studio/new/documentary/">+ Documentary</a>
+      <a href="/studio/specialists/" class="{{ 'on' if nav == 'specialists' }}">Specialists</a>
+      <a href="/studio/settings/" class="{{ 'on' if nav == 'settings' }}">Settings</a>
+    </nav>
+    <div class="right small muted">
+      <span>{{ email }}</span>
+      <a href="/admin/">Origination</a>
+      <a href="/admin/logout/">Logout</a>
+    </div>
+  </div>
+</header>
+<main class="wrap">
+  {% if llm_provider == 'offline' %}
+  <div class="banner">No AI model is connected (set <code>ANTHROPIC_API_KEY</code> on the server), so the specialists produce labelled placeholder drafts only. Nothing they produce is researched until a model is connected.</div>
+  {% endif %}
+  {% block body %}{% endblock %}
+</main>
+</body>
+</html>

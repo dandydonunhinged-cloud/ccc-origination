@@ -30,4 +30,17 @@ services:
         sync: false
       - key: PLAID_SECRET
         sync: false
+      # Studio (/studio/) — content production pipeline
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OMNIVOICE_URL
+        sync: false
+      - key: OMNIVOICE_API_KEY
+        sync: false
+      - key: ONLYSOCIAL_TOKEN
+        sync: false
+      - key: ONLYSOCIAL_WORKSPACE
+        sync: false
+      - key: STUDIO_MEDIA_DIR
+        sync: false
     autoDeploy: true

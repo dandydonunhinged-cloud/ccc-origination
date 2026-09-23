@@ -1,0 +1,83 @@
+{% extends "studio/base.html" %}
+{% set nav = 'home' %}
+{% block title %}Mission control{% endblock %}
+
+{% macro project_row(p, n) -%}
+{% set pr = progress(p) %}
+<li data-id="{{ p.id }}" draggable="true" class="proj-row">
+  <span class="handle" title="Drag to reorder">⠿</span>
+  <span class="rankno">{{ n }}</span>
+  <select data-e="project:{{ p.id }}:priority" class="pill p-{{ p.priority }}" title="Priority" data-reload>
+    {% for pri in PRIORITIES %}<option {{ 'selected' if pri == p.priority }}>{{ pri }}</option>{% endfor %}
+  </select>
+  <span class="pill k-{{ p.kind }}">{{ p.kind }}</span>
+  <a class="title grow" href="/studio/project/{{ p.id }}/">{{ p.title }}</a>
+  <span class="small muted">{{ STAGE_LABELS.get(pr.stage, pr.stage) }}</span>
+  {% if pr.running %}<span class="running-dot" title="A specialist is working"></span>{% endif %}
+  <span class="bar" title="{{ pr.done }}/{{ pr.total }} tasks done"><i style="width:{{ pr.pct }}%"></i></span>
+  <select data-e="project:{{ p.id }}:status" title="Status">
+    {% for s in PROJECT_STATUSES %}<option {{ 'selected' if s == p.status }}>{{ s }}</option>{% endfor %}
+  </select>
+  <span class="movers">
+    <button class="icon-btn" data-move="top" title="Move to top (prioritize)">⤒</button>
+    <button class="icon-btn" data-move="up" title="Move up">▲</button>
+    <button class="icon-btn" data-move="down" title="Move down">▼</button>
+    <button class="icon-btn" data-move="bottom" title="Move to bottom (deprioritize)">⤓</button>
+  </span>
+  {% set kids = p.children | sort(attribute='rank') %}
+  {% if kids %}
+  <ul class="sortable children" data-entity="project" style="flex-basis:100%">
+    {% for c in kids %}{{ project_row(c, loop.index) }}{% endfor %}
+  </ul>
+  {% endif %}
+</li>
+{%- endmacro %}
+
+{% block body %}
+<section class="panel">
+  <div class="eyebrow">What are we making?</div>
+  <h1>Start something</h1>
+  <div class="starts" style="margin-top:.8rem">
+    <a class="start" href="/studio/new/series/"><b>🔎 Let's find a series</b><span>Spock interviews you, the Investigator checks the claim holds up, then you rank the episodes.</span></a>
+    <a class="start" href="/studio/new/episode/"><b>🎬 Let's create an episode</b><span>A 12–15 min Stewart-Doctrine episode, from research through render and posting.</span></a>
+    <a class="start" href="/studio/new/documentary/"><b>🎞 Let's create a documentary</b><span>Long-form: investigate, research, acts, full production.</span></a>
+    <a class="start" href="/studio/new/project/"><b>📋 Track a project</b><span>Any other project. Add your own tasks and use the same board.</span></a>
+  </div>
+</section>
+
+<div class="grid grid-2">
+  <section class="panel">
+    <div class="row spread">
+      <h2>All projects <span class="muted small">— top of the list is highest priority</span></h2>
+    </div>
+    {% if not active %}
+      <p class="muted">Nothing in production yet. Pick a button above to start.</p>
+    {% endif %}
+    <ul class="sortable" data-entity="project">
+      {% for p in active %}{{ project_row(p, loop.index) }}{% endfor %}
+    </ul>
+    {% if closed %}
+    <details style="margin-top:1rem">
+      <summary class="muted">Published & killed ({{ closed|length }})</summary>
+      <ul class="sortable" data-entity="project" style="margin-top:.6rem">
+        {% for p in closed %}{{ project_row(p, loop.index) }}{% endfor %}
+      </ul>
+    </details>
+    {% endif %}
+  </section>
+
+  <aside class="panel">
+    <h2>Work queue</h2>
+    <p class="small muted">Everything a specialist is working on, waiting for your review, or blocked.</p>
+    {% for t in queue %}
+      <div class="task-line">
+        <span class="pill s-{{ t.status }}">{{ t.status }}</span>
+        <a href="/studio/project/{{ t.project_id }}/?task={{ t.id }}" class="grow">{{ t.title }}</a>
+        <span class="small muted">{{ t.project.title[:40] }}</span>
+      </div>
+    {% else %}
+      <p class="muted">Queue is clear.</p>
+    {% endfor %}
+  </aside>
+</div>
+{% endblock %}

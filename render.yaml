@@ -43,4 +43,8 @@ services:
         sync: false
       - key: STUDIO_MEDIA_DIR
         sync: false
+      - key: IMAGEGEN_URL
+        sync: false
+      - key: IMAGEGEN_COMFY_WORKFLOW
+        sync: false
     autoDeploy: true

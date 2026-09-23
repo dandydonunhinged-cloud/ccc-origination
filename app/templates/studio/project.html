@@ -325,7 +325,7 @@
       </div>
       {% else %}<p class="muted small">Produced by the Visuals step.</p>{% endfor %}
 
-      {% for kind, label, hint in [('animation', 'Animated connective tissue', 'Attach the rendered animation file to each piece.'), ('music', 'Music & sound', 'Attach the licensed audio file for each cue; it is mixed under the narration.')] %}
+      {% for kind, label, hint in [('animation', 'Animated connective tissue', 'Generate a keyframe on the image model (Qwen-Image-2.1), or attach a rendered animation file. The prompt is editable.'), ('thumbnail', 'Thumbnail', 'Generated from the Social Producer\'s prompt. Edit the prompt and regenerate as needed.'), ('music', 'Music & sound', 'Attach the licensed audio file for each cue; it is mixed under the narration.')] %}
       <h2 style="margin-top:1rem">{{ label }}</h2>
       <p class="small muted">{{ hint }}</p>
       {% for a in by_kind.get(kind, []) %}
@@ -334,7 +334,12 @@
           <button class="icon-btn btn-danger" data-act="DELETE /studio/api/asset/{{ a.id }}">✕</button></div>
         <textarea data-e="asset:{{ a.id }}:body" style="min-height:50px">{{ a.body }}</textarea>
         <div class="row small muted">{% for k, v in (a.meta or {}).items() if k not in ('auto', 'concept', 'prompt') and v not in ('', None) %}<span>{{ k }}: {{ v }}</span>{% endfor %}</div>
+        {% if a.path and kind != 'music' and (a.url or '').split('?')[0].lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) %}
+          <img src="{{ a.url }}" alt="" style="max-width:100%;border-radius:6px;margin:.3rem 0">
+        {% endif %}
         <div class="row"><input type="file" data-upload="{{ a.id }}" accept="{{ 'audio/*' if kind == 'music' else 'video/*,image/*' }}" style="width:auto">
+          {% if kind != 'music' %}<button class="btn btn-xs" data-act="POST /studio/api/asset/{{ a.id }}/generate" data-msg="Image generated" {{ '' if imagegen else 'disabled title="Set IMAGEGEN_URL to enable"' }}>🎨 {{ 'Regenerate' if (a.meta or {}).get('generated') else 'Generate' }} on image model</button>{% endif %}
+          {% if (a.meta or {}).get('generated') %}<span class="pill" title="Made by the local image model — never used as a fact visual">AI-generated</span>{% endif %}
           {% if a.path %}<a href="{{ a.url }}" target="_blank" class="small">attached ↗</a>{% endif %}</div>
       </div>
       {% else %}<p class="muted small">Nothing yet.</p>{% endfor %}
@@ -342,7 +347,7 @@
 
       <details style="margin-top:1rem"><summary><b>+ Add / upload an asset</b></summary>
         <form id="asset-form" class="grid grid-halves" style="margin-top:.5rem">
-          <div><label>Kind</label><select name="kind">{% for k in ['visual','animation','music','audio','render'] %}<option>{{ k }}</option>{% endfor %}</select></div>
+          <div><label>Kind</label><select name="kind">{% for k in ['visual','animation','thumbnail','music','audio','render'] %}<option>{{ k }}</option>{% endfor %}</select></div>
           <div><label>Title</label><input name="title"></div>
           <div><label>URL (optional)</label><input name="url"></div>
           <div><label>File (optional)</label><input type="file" name="file"></div>

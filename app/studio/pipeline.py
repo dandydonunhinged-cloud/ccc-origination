@@ -391,6 +391,13 @@ DEFAULT_SETTINGS = {
     ],
     "public_base_url": "",
     "voice": {"voice": "default", "model": "omnivoice", "speed": 1.0, "format": "mp3"},
+    # Local image model (Qwen-Image-2.1) — animation keyframes and thumbnails only.
+    # 1024x576 keeps a 16:9 frame inside a 4060 Ti's memory budget.
+    "imagegen": {
+        "style_prefix": "bold editorial motion-graphics style, DanDon Media red and charcoal palette",
+        "negative_prompt": "photorealistic real people, fake documents, text, watermark",
+        "width": 1024, "height": 576, "steps": 30,
+    },
 }
 
 

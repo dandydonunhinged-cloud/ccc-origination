@@ -11,6 +11,7 @@
     <tr><td>AI specialists (Claude)</td><td><span class="pill {{ 's-done' if status.llm == 'anthropic' else 's-blocked' }}">{{ status.llm }}</span></td><td><code>ANTHROPIC_API_KEY</code></td></tr>
     <tr><td>OmniVoice (text-to-speech)</td><td><span class="pill {{ 's-done' if status.omnivoice else 's-blocked' }}">{{ 'connected' if status.omnivoice else 'not set' }}</span></td><td><code>OMNIVOICE_URL</code> (OpenAI-compatible <code>/v1/audio/speech</code> server), optional <code>OMNIVOICE_API_KEY</code></td></tr>
     <tr><td>OnlySocial (publishing)</td><td><span class="pill {{ 's-done' if status.onlysocial else 's-blocked' }}">{{ 'connected' if status.onlysocial else 'not set' }}</span></td><td><code>ONLYSOCIAL_TOKEN</code>, <code>ONLYSOCIAL_WORKSPACE</code> (workspace UUID)</td></tr>
+    <tr><td>Image model (Qwen-Image-2.1 on your GPU)</td><td><span class="pill {{ 's-done' if status.imagegen else 's-blocked' }}">{{ 'connected' if status.imagegen else 'not set' }}</span></td><td><code>IMAGEGEN_URL</code> + <code>IMAGEGEN_COMFY_WORKFLOW</code> (ComfyUI, default) — or <code>IMAGEGEN_API=openai</code> for an OpenAI-compatible <code>/v1/images/generations</code> server. Animation keyframes and thumbnails only.</td></tr>
     <tr><td>ffmpeg (MP4 render)</td><td><span class="pill {{ 's-done' if status.ffmpeg else 's-blocked' }}">{{ 'installed' if status.ffmpeg else 'missing' }}</span></td><td>Installed in the Docker image. Without it the browser player still works.</td></tr>
   </table>
 </section>
@@ -53,6 +54,17 @@
       <div><label>Format</label><select id="v-format">{% for f in ['mp3', 'wav', 'opus', 'flac'] %}<option {{ 'selected' if f == settings.voice.format }}>{{ f }}</option>{% endfor %}</select></div>
     </div>
     <button class="btn btn-primary btn-xs" id="save-voice" style="margin-top:.6rem">Save voice</button>
+
+    <h2 style="margin-top:1.2rem">Image model</h2>
+    <p class="small muted">Used for animation keyframes and thumbnails only. Fact visuals are always real documents. Qwen-Image-2.1's license is non-commercial — check it covers your use.</p>
+    <label>Style prefix (added to every prompt)</label><input id="ig-style" value="{{ settings.imagegen.style_prefix }}">
+    <label>Negative prompt</label><input id="ig-neg" value="{{ settings.imagegen.negative_prompt }}">
+    <div class="grid grid-halves">
+      <div><label>Width</label><input id="ig-w" type="number" step="64" value="{{ settings.imagegen.width }}"></div>
+      <div><label>Height</label><input id="ig-h" type="number" step="64" value="{{ settings.imagegen.height }}"></div>
+      <div><label>Steps</label><input id="ig-steps" type="number" value="{{ settings.imagegen.steps }}"></div>
+    </div>
+    <button class="btn btn-primary btn-xs" id="save-imagegen" style="margin-top:.6rem">Save image settings</button>
   </section>
 </div>
 
@@ -105,6 +117,8 @@ document.addEventListener("DOMContentLoaded", () => {
       `<span class="mono">${esc(a.id)}</span> — ${esc(a.provider || a.platform || "")} ${esc(a.name || a.username || "")}`).join("<br>");
   };
 
+  document.getElementById("save-imagegen").onclick = () => post("imagegen", { style_prefix: v("ig-style"), negative_prompt: v("ig-neg"),
+    width: Number(v("ig-w")), height: Number(v("ig-h")), steps: Number(v("ig-steps")) });
   document.getElementById("save-voice").onclick = () => post("voice", { voice: v("v-voice"), model: v("v-model"), speed: Number(v("v-speed")), format: v("v-format") });
 });
 </script>

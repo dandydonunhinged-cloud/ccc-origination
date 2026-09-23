@@ -355,3 +355,116 @@ def test_ffmpeg_render(db, tmp_path):
     report = render.render_mp4(m, out)
     assert out.exists() and out.stat().st_size > 1000 and report["visuals_used"] == 1
     assert 2.5 < integrations.probe_duration(out) < 3.6
+
+
+# ---------------------------------------------------------------------------
+# Image model (Qwen-Image-2.1 via ComfyUI) — animation keyframes & thumbnails only
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def fake_comfyui(tmp_path, monkeypatch):
+    """A tiny stand-in for ComfyUI's HTTP API: POST /prompt, GET /history/<id>, GET /view."""
+    import http.server
+    import threading
+    png = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+                        "0000000d49444154789c6360f8cfc00000030101009c2d2a6e0000000049454e44ae426082")
+    seen = []
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["content-length"])))
+            seen.append(body["prompt"])
+            self._json({"prompt_id": "p1"})
+
+        def do_GET(self):
+            if self.path.startswith("/history/"):
+                self._json({"p1": {"status": {"status_str": "success"},
+                                   "outputs": {"9": {"images": [{"filename": "out.png", "type": "output"}]}}}})
+            elif self.path.startswith("/view"):
+                self.send_response(200)
+                self.send_header("content-type", "image/png")
+                self.end_headers()
+                self.wfile.write(png)
+
+        def _json(self, obj):
+            data = json.dumps(obj).encode()
+            self.send_response(200)
+            self.send_header("content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    wf = tmp_path / "qwen_image_api.json"
+    wf.write_text(json.dumps({
+        "3": {"class_type": "KSampler", "inputs": {"seed": "{{seed}}", "steps": "{{steps}}"}},
+        "5": {"class_type": "EmptyLatentImage", "inputs": {"width": "{{width}}", "height": "{{height}}"}},
+        "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "{{prompt}}"}},
+        "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "{{negative}}"}},
+    }))
+    monkeypatch.setenv("IMAGEGEN_URL", f"http://127.0.0.1:{srv.server_port}")
+    monkeypatch.setenv("IMAGEGEN_COMFY_WORKFLOW", str(wf))
+    monkeypatch.delenv("IMAGEGEN_API", raising=False)
+    yield seen
+    srv.shutdown()
+
+
+def test_fill_workflow_escapes_prompt():
+    wf = integrations.fill_workflow('{"a": {"text": "{{prompt}}", "w": "{{width}}", "s": {{seed}}}}',
+                                    {"prompt": 'He said "no"\nthen left', "negative": "", "width": 1024,
+                                     "height": 576, "seed": 7, "steps": 30})
+    assert wf == {"a": {"text": 'He said "no"\nthen left', "w": 1024, "s": 7}}
+
+
+def test_animation_keyframes_on_image_model(client, db, mock_llm, fake_comfyui):
+    pid = client.post("/studio/api/intake/create", json={"kind": "episode", "answers": [
+        {"q": "About?", "a": "Keyframe test"}]}).json()["id"]
+    engine._running.clear()
+    run_stage(db, pid, "story")
+    anim = run_stage(db, pid, "animation")
+    assert "1 keyframes generated" in anim.output, anim.output + anim.error
+    piece = next(a for a in db.get(StudioProject, pid).assets if a.kind == "animation")
+    assert piece.meta["generated"] and piece.path.endswith(".png") and piece.status == "ready"
+    sent = fake_comfyui[0]
+    assert sent["5"]["inputs"] == {"width": 1024, "height": 576}
+    assert "DanDon Media" in sent["6"]["inputs"]["text"] and sent["6"]["inputs"]["text"].endswith("p")
+    assert client.get(piece.url).status_code == 200
+
+    # regenerate through the API; fact visuals are refused
+    assert client.post(f"/studio/api/asset/{piece.id}/generate").status_code == 200
+    src = StudioSource(project_id=pid, url="https://example.gov/d", title="d")
+    db.add(src)
+    db.flush()
+    vis = StudioAsset(project_id=pid, kind="visual", title="doc", body="a document", source_id=src.id)
+    db.add(vis)
+    db.commit()
+    r = client.post(f"/studio/api/asset/{vis.id}/generate")
+    assert r.status_code == 400 and "real documents" in r.json()["detail"]
+
+
+def test_generated_images_never_fact_visuals(db):
+    from app.studio import render
+    p = StudioProject(kind="episode", title="Guard", data={})
+    db.add(p)
+    db.flush()
+    src = StudioSource(project_id=p.id, url="https://example.gov/x", title="x")
+    db.add(src)
+    db.flush()
+    db.add(StudioAsset(project_id=p.id, kind="visual", title="sneaky", source_id=src.id, status="ready",
+                       meta={"generated": True}))
+    db.commit()
+    db.refresh(p)
+    m = render.build_manifest(p, {}, [], "u")
+    assert m["visuals"] == [] and any("AI-generated" in w for w in m["warnings"])
+
+
+def test_imagegen_not_configured(client, db, monkeypatch):
+    monkeypatch.delenv("IMAGEGEN_URL", raising=False)
+    pid = client.post("/studio/api/project", json={"kind": "episode", "title": "No GPU"}).json()["id"]
+    aid = client.post(f"/studio/api/project/{pid}/asset", data={"kind": "thumbnail", "title": "t",
+                                                                 "body": "a red gavel"}).json()["id"]
+    r = client.post(f"/studio/api/asset/{aid}/generate")
+    assert r.status_code == 409 and "IMAGEGEN_URL" in r.json()["detail"]

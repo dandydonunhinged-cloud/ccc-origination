@@ -466,10 +466,50 @@ OUTPUT_CONTRACT:animation"""
     if not isinstance(data, dict):
         return res.text, {}, "review"
     _replace_assets(db, project, "animation")
+    pieces = []
     for i, p in enumerate(data.get("pieces", [])):
-        db.add(StudioAsset(project_id=project.id, kind="animation", rank=i, title=p.get("concept", "")[:300],
-                           body=p.get("prompt", ""), meta={**p, "auto": True}, status="draft"))
-    return f"{len(data.get('pieces', []))} animation pieces designed. Attach rendered files to each asset.", data, "review"
+        a = StudioAsset(project_id=project.id, kind="animation", rank=i, title=p.get("concept", "")[:300],
+                        body=p.get("prompt", ""), meta={**p, "auto": True}, status="draft")
+        db.add(a)
+        pieces.append(a)
+    db.flush()
+    out = f"{len(pieces)} animation pieces designed."
+    out += _generate_keyframes(db, pieces) if integrations.imagegen_configured() else \
+        " Attach rendered files to each piece (or set up image generation to render keyframes)."
+    return out, data, "review"
+
+
+GENERATED_KINDS = ("animation", "thumbnail")  # never "visual": fact visuals are real documents only
+
+
+def generate_asset_image(db: Session, asset: StudioAsset) -> StudioAsset:
+    """Render an image for a non-factual asset with the local image model (Qwen-Image-2.1)."""
+    if asset.kind not in GENERATED_KINDS:
+        raise ValueError("AI images are only for animation and thumbnails — fact visuals must be real documents.")
+    prompt = (asset.body or (asset.meta or {}).get("prompt") or asset.title or "").strip()
+    if not prompt:
+        raise ValueError("This asset has no prompt to generate from.")
+    out = integrations.media_path(asset.project.public_id, f"gen_{asset.kind}_{asset.id}.png")
+    integrations.generate_image(prompt, out, get_setting(db, "imagegen") or {})
+    asset.path = str(out)
+    asset.url = integrations.media_url(out) + f"?v={int(datetime.now().timestamp())}"
+    asset.meta = {**(asset.meta or {}), "generated": True, "generator": "image model (AI-generated)"}
+    asset.status = "ready"
+    return asset
+
+
+def _generate_keyframes(db, assets) -> str:
+    made, failed = 0, []
+    for a in assets:
+        try:
+            generate_asset_image(db, a)
+            made += 1
+        except (integrations.IntegrationError, ValueError) as e:
+            failed.append(f"{a.title[:40]}: {e}")
+    msg = f" {made} keyframes generated on the image model."
+    if failed:
+        msg += " Failed: " + "; ".join(failed[:3])
+    return msg
 
 
 def h_music(db, task, project):
@@ -561,7 +601,10 @@ Lead with the hook, respect each platform's length norms (X ≤ 280 chars incl. 
 Bluesky ≤ 300, Threads ≤ 500), and always point to the sources page. No claims beyond
 what the episode proves.
 
-{_json_contract('''{"<platform_key>": {"title": "", "caption": "", "hashtags": "#a #b"}}''')}
+Also write "thumbnail_prompt": an image-generation prompt for a bold 16:9 thumbnail
+(no real people's faces, no fake documents; stylized, text-free art — we add text later).
+
+{_json_contract('''{"<platform_key>": {"title": "", "caption": "", "hashtags": "#a #b"}, "thumbnail_prompt": ""}''')}
 OUTPUT_CONTRACT:social"""
     res = _call(db, task, prompt, effort="medium")
     data = llm.extract_json(res.text) or {}
@@ -572,8 +615,22 @@ OUTPUT_CONTRACT:social"""
         entry = data.get(p["key"], {}) if isinstance(data, dict) else {}
         db.add(StudioPost(project_id=project.id, platform=p["key"], title=entry.get("title", project.title)[:300],
                           caption=entry.get("caption", ""), hashtags=entry.get("hashtags", "")[:500]))
-    return (f"Drafted posts for {len(platforms)} platforms. Review them in the Publish panel, approve, "
-            "then press Send to OnlySocial."), data, "review"
+    msg = (f"Drafted posts for {len(platforms)} platforms. Review them in the Publish panel, approve, "
+           "then press Send to OnlySocial.")
+    thumb_prompt = data.get("thumbnail_prompt") if isinstance(data, dict) else None
+    if thumb_prompt:
+        _replace_assets(db, project, "thumbnail")
+        thumb = StudioAsset(project_id=project.id, kind="thumbnail", title="Thumbnail", body=thumb_prompt,
+                            meta={"auto": True}, status="draft")
+        db.add(thumb)
+        db.flush()
+        if integrations.imagegen_configured():
+            try:
+                generate_asset_image(db, thumb)
+                msg += " Thumbnail generated."
+            except (integrations.IntegrationError, ValueError) as e:
+                msg += f" Thumbnail generation failed: {e}"
+    return msg, data, "review"
 
 
 HANDLERS = {

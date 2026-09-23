@@ -123,6 +123,7 @@ def studio_project(pid: int, request: Request, db: Session = Depends(get_db), em
                  progress=engine.progress, stages=stages_for(p.kind),
                  platforms=get_setting(db, "platforms") or [], sources_url=engine.sources_url(db, p),
                  onlysocial=integrations.onlysocial_configured(),
+                 imagegen=integrations.imagegen_configured(),
                  chat=[m for m in p.messages if m.channel == "showrunner"])
 
 
@@ -148,6 +149,7 @@ def studio_settings(request: Request, db: Session = Depends(get_db), email: str 
         "omnivoice": integrations.omnivoice_configured(),
         "onlysocial": integrations.onlysocial_configured(),
         "ffmpeg": bool(integrations.ffmpeg()),
+        "imagegen": integrations.imagegen_configured(),
     }
     return _page(request, "settings.html", email, settings=settings, status=status)
 
@@ -469,6 +471,20 @@ async def api_asset_upload(aid: int, file: UploadFile = File(...), db: Session =
     _store_upload(a.project, a, file)
     if a.status in ("draft", "needs_sourcing") and a.kind != "visual":
         a.status = "ready"
+    db.commit()
+    return {"ok": True, "url": a.url}
+
+
+@router.post("/api/asset/{aid}/generate")
+def api_asset_generate(aid: int, db: Session = Depends(get_db), email: str = Depends(api_user)):
+    """(Re)generate an animation keyframe or thumbnail on the local image model."""
+    a = _get(db, StudioAsset, aid)
+    try:
+        engine.generate_asset_image(db, a)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except integrations.IntegrationError as e:
+        raise HTTPException(409, str(e))
     db.commit()
     return {"ok": True, "url": a.url}
 

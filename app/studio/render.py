@@ -84,6 +84,9 @@ def build_manifest(project, brand: dict, links_bar: list, sources_url: str) -> d
             if a.status == "needs_sourcing":
                 warnings.append(f"Visual '{a.title}' has no verified source — excluded from render.")
                 continue
+            if meta.get("generated"):
+                warnings.append(f"Visual '{a.title}' is AI-generated — fact visuals must be real; excluded.")
+                continue
             visuals.append({
                 "asset_id": a.id, "title": a.title, "type": meta.get("visual_type", "document"),
                 "url": a.url, "path": a.path, "caption": meta.get("caption", ""),
@@ -101,7 +104,8 @@ def build_manifest(project, brand: dict, links_bar: list, sources_url: str) -> d
         at = timeline[idx]["end"] if isinstance(idx, int) and 0 <= idx < len(timeline) else 0.0
         dur = float(meta.get("duration_sec") or 3)
         animation.append({"asset_id": a.id, "title": a.title, "concept": meta.get("concept", a.body),
-                          "url": a.url, "path": a.path, "start": round(max(at - dur / 2, 0), 2),
+                          "url": a.url, "path": a.path, "generated": bool(meta.get("generated")),
+                          "start": round(max(at - dur / 2, 0), 2),
                           "end": round(min(at + dur / 2, duration), 2)})
 
     music = [{"asset_id": a.id, "title": a.title, "url": a.url, "path": a.path,
@@ -180,6 +184,22 @@ def render_mp4(manifest: dict, out: Path) -> dict:
         x, y, w, h = LAYOUT["main"]
         filters.append(f"[{n}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
                        f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=black,"
+                       f"setpts=PTS-STARTPTS+{item['start']:.2f}/TB[v{n}]")
+        filters.append(f"{last}[v{n}]overlay={x}:{y}:eof_action=pass:"
+                       f"enable='between(t,{item['start']:.2f},{item['end']:.2f})'[o{n}]")
+        last, n = f"[o{n}]", n + 1
+
+    # Animated connective tissue: keyframe stills (e.g. from the local image model) cover the
+    # main area during their window. Video pieces are left to the editor for now.
+    for item in manifest.get("animation", []):
+        img = _local_image(item, workdir) if item.get("path") else None
+        if not img:
+            continue
+        dur = max(item["end"] - item["start"], 0.5)
+        inputs += ["-loop", "1", "-t", f"{dur:.2f}", "-i", str(img)]
+        x, y, w, h = LAYOUT["main"]
+        filters.append(f"[{n}:v]scale={w}:{h}:force_original_aspect_ratio=decrease,"
+                       f"pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:color=0x0d0d12,"
                        f"setpts=PTS-STARTPTS+{item['start']:.2f}/TB[v{n}]")
         filters.append(f"{last}[v{n}]overlay={x}:{y}:eof_action=pass:"
                        f"enable='between(t,{item['start']:.2f},{item['end']:.2f})'[o{n}]")

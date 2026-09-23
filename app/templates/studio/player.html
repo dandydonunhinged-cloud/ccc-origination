@@ -81,7 +81,8 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("#timeline button").forEach((b, i) => b.classList.toggle("on", seg && M.segments[i].segment_id === seg.segment_id));
     if (key === lastKey) return; lastKey = key;
     let html = "";
-    if (anim) html = anim.url && !isImg(anim.url) ? `<video src="${esc(anim.url)}" autoplay muted></video>` : `<div class="anim">${esc(anim.concept || anim.title)}</div>`;
+    if (anim) html = anim.url && isImg(anim.url) ? `<img src="${esc(anim.url)}" alt="">`
+      : anim.url ? `<video src="${esc(anim.url)}" autoplay muted></video>` : `<div class="anim">${esc(anim.concept || anim.title)}</div>`;
     else if (vis) {
       const img = vis.url && isImg(vis.url) ? vis.url : null;
       html = img ? `<img src="${esc(img)}" alt="">` : `<div class="doc-card"><div class="src">${esc(vis.source_title || "Source")}</div>

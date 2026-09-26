@@ -475,6 +475,36 @@ async def api_asset_upload(aid: int, file: UploadFile = File(...), db: Session =
     return {"ok": True, "url": a.url}
 
 
+@router.post("/api/asset/{aid}/capture")
+def api_asset_capture(aid: int, db: Session = Depends(get_db), email: str = Depends(api_user)):
+    """Grab the real document frame for a fact visual from its source PDF."""
+    from .capture import CaptureError
+    a = _get(db, StudioAsset, aid)
+    if a.kind != "visual":
+        raise HTTPException(400, "Capture is for fact visuals.")
+    try:
+        if not engine.capture_visual(db, a):
+            raise HTTPException(409, "Source isn't a PDF — take a screenshot and attach it.")
+    except CaptureError as e:
+        raise HTTPException(409, str(e))
+    db.commit()
+    return {"ok": True, "url": a.url}
+
+
+@router.get("/api/project/{pid}/handoff.zip")
+def api_handoff(pid: int, db: Session = Depends(get_db), email: str = Depends(api_user)):
+    """Download the DaVinci Resolve Studio + Blender package for an episode."""
+    from . import handoff
+    p = _get(db, StudioProject, pid)
+    brand = get_setting(db, "brand") or {}
+    manifest = render.build_manifest(p, brand, get_setting(db, "links_bar") or [], engine.sources_url(db, p))
+    try:
+        out = handoff.build_package(p, manifest, brand)
+    except integrations.IntegrationError as e:
+        raise HTTPException(409, str(e))
+    return FileResponse(str(out), filename=out.name, media_type="application/zip")
+
+
 @router.post("/api/asset/{aid}/generate")
 def api_asset_generate(aid: int, db: Session = Depends(get_db), email: str = Depends(api_user)):
     """(Re)generate an animation keyframe or thumbnail on the local image model."""

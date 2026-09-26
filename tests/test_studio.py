@@ -468,3 +468,190 @@ def test_imagegen_not_configured(client, db, monkeypatch):
                                                                  "body": "a red gavel"}).json()["id"]
     r = client.post(f"/studio/api/asset/{aid}/generate")
     assert r.status_code == 409 and "IMAGEGEN_URL" in r.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Document capture (real PDF pages) and the DaVinci Resolve / Blender package
+# ---------------------------------------------------------------------------
+
+def make_pdf(lines: list[str]) -> bytes:
+    """A minimal one-page text PDF."""
+    esc = lambda t: t.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")  # noqa: E731
+    content = "BT /F1 14 Tf 72 700 Td " + " ".join(f"({esc(l)}) Tj 0 -22 Td" for l in lines) + " ET"
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
+            "/Resources << /Font << /F1 5 0 R >> >> >>",
+            f"<< /Length {len(content)} >>\nstream\n{content}\nendstream",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    out, offsets = b"%PDF-1.4\n", []
+    for i, o in enumerate(objs, 1):
+        offsets.append(len(out))
+        out += f"{i} 0 obj\n{o}\nendobj\n".encode()
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    out += b"".join(f"{o:010d} 00000 n \n".encode() for o in offsets)
+    out += f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF".encode()
+    return out
+
+
+BILL = make_pdf(["H.R. 1234 - Accountability Act", "", "Sec. 4(b) The Secretary may waive the",
+                 "disclosure requirement for any contractor.", "", "Sec. 5 Effective date."])
+
+
+def test_capture_pdf_highlights_passage(tmp_path):
+    from PIL import Image
+    from app.studio.capture import capture_pdf
+    out = tmp_path / "frame.png"
+    report = capture_pdf(BILL, "The Secretary may waive the disclosure requirement", out)
+    assert report == {"page": 1, "highlighted": True, "passage_found": True}
+    img = Image.open(out).convert("RGB")
+    assert img.size == (1440, 810)
+    yellowish = sum(1 for p in img.getdata() if p[0] > 200 and p[1] > 180 and p[2] < 150)
+    assert yellowish > 500  # the highlight is on the frame
+    report = capture_pdf(BILL, "words that are not in the bill", tmp_path / "miss.png")
+    assert report["passage_found"] is False and report["highlighted"] is False
+
+
+def test_visuals_capture_source_pdf(client, db, mock_llm, monkeypatch):
+    monkeypatch.setattr(engine, "fetch_pdf", lambda url, cache: BILL)
+    pid = client.post("/studio/api/intake/create", json={"kind": "episode", "answers": [
+        {"q": "About?", "a": "Capture test"}]}).json()["id"]
+    engine._running.clear()
+    run_stage(db, pid, "research")
+    run_stage(db, pid, "story")
+    vis = run_stage(db, pid, "visuals")
+    assert "1 document frames captured" in vis.output, vis.output
+    shot = next(a for a in db.get(StudioProject, pid).assets if a.kind == "visual" and a.status == "ready")
+    assert shot.path.endswith(".png") and shot.meta["capture"]["page"] == 1
+    assert client.post(f"/studio/api/asset/{shot.id}/capture").status_code == 200
+
+
+class _FakeResolve:
+    """Just enough of DaVinciResolveScript to run resolve_build.py."""
+
+    def __init__(self):
+        self.appended, self.markers, self.props, self.settings = [], [], [], {}
+        fake = self
+
+        class Item:
+            def __init__(self, path):
+                self.path = path
+
+            def GetClipProperty(self, key):
+                return self.path
+
+        class TLItem:
+            def SetProperty(self, k, v):
+                fake.props.append((k, v))
+                return True
+
+        class Timeline:
+            tracks = {"video": 1, "audio": 1}
+
+            def GetTrackCount(self, kind):
+                return self.tracks[kind]
+
+            def AddTrack(self, kind, *a):
+                self.tracks[kind] += 1
+
+            def SetTrackName(self, *a):
+                return True
+
+            def GetStartFrame(self):
+                return 86400
+
+            def AddMarker(self, *a):
+                fake.markers.append(a)
+
+        class Pool:
+            def GetRootFolder(self):
+                return "root"
+
+            def AddSubFolder(self, *a):
+                return "folder"
+
+            def SetCurrentFolder(self, *a):
+                pass
+
+            def ImportMedia(self, paths):
+                return [Item(p) for p in paths]
+
+            def CreateEmptyTimeline(self, name):
+                return Timeline()
+
+            def AppendToTimeline(self, infos):
+                fake.appended.extend(infos)
+                return [TLItem()]
+
+        class Project:
+            def SetSetting(self, k, v):
+                fake.settings[k] = v
+
+            def GetMediaPool(self):
+                return Pool()
+
+            def SetCurrentTimeline(self, t):
+                pass
+
+        class PM:
+            def CreateProject(self, name):
+                return Project()
+
+        self.pm = PM()
+
+    def GetProjectManager(self):
+        return self.pm
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg not installed")
+def test_resolve_package(db, tmp_path):
+    import runpy
+    import zipfile
+    from app.studio import handoff, render
+    p = StudioProject(kind="episode", title="Package Test", data={})
+    db.add(p)
+    db.flush()
+    voice = tmp_path / "v.mp3"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=duration=4", str(voice)], check=True, capture_output=True)
+    doc = tmp_path / "doc.png"
+    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=white:s=800x600", "-frames:v", "1", str(doc)],
+                   check=True, capture_output=True)
+    from app.studio.models import StudioSegment
+    seg = StudioSegment(project_id=p.id, title="Deep dive", format="deep_dive", minutes=1, script="HOST: hi")
+    src = StudioSource(project_id=p.id, url="https://example.gov/x", title="The bill", quote="q")
+    db.add_all([seg, src])
+    db.flush()
+    db.add_all([
+        StudioAsset(project_id=p.id, kind="audio", path=str(voice), url="/x"),
+        StudioAsset(project_id=p.id, kind="visual", segment_id=seg.id, source_id=src.id, status="ready",
+                    title="Bill page", path=str(doc)),
+        StudioAsset(project_id=p.id, kind="visual", segment_id=seg.id, source_id=src.id, status="ready",
+                    title="Floor speech", url="https://example.gov/video", meta={"timestamp_in": "00:41"}),
+        StudioAsset(project_id=p.id, kind="animation", title="wipe", path=str(doc),
+                    meta={"after_segment_index": 0, "duration_sec": 1, "on_screen_text": "FOLLOW THE MONEY"}),
+        StudioAsset(project_id=p.id, kind="script_clean", body="hi"),
+    ])
+    db.commit()
+    db.refresh(p)
+    brand = {"name": "DanDon Media", "accent": "#e63946"}
+    manifest = render.build_manifest(p, brand, [{"label": "YouTube", "url": "https://yt"}], "https://x/s/")
+    zpath = handoff.build_package(p, manifest, brand)
+    root = tmp_path / "unzipped"
+    zipfile.ZipFile(zpath).extractall(root)
+    pkg = next(root.iterdir())
+    for rel in ("resolve_build.py", "plan.json", "render_bumpers.bat", "blender/bumper.py", "blender/anim_01.json",
+                "media/plate.mp4", "media/visual_01.mp4", "media/anim_01.mp4", "media/narration.mp3",
+                "scripts/script_clean.txt", "sources.csv", "NEEDS_FRAME_GRAB.txt", "README.txt"):
+        assert (pkg / rel).exists(), rel
+    assert json.loads((pkg / "blender/anim_01.json").read_text())["on_screen_text"] == "FOLLOW THE MONEY"
+
+    fake = _FakeResolve()
+    runpy.run_path(str(pkg / "resolve_build.py"), init_globals={"resolve": fake}, run_name="__main__")
+    tracks = sorted((i["trackIndex"], i["mediaType"]) for i in fake.appended)
+    assert tracks == [(1, 1), (1, 2), (2, 1), (3, 1)]  # plate, narration, visual, bumper
+    plate = next(i for i in fake.appended if i["trackIndex"] == 1 and i["mediaType"] == 1)
+    assert plate["recordFrame"] == 86400 and plate["endFrame"] == round(manifest["duration_sec"] * 30) - 1
+    assert ("ZoomX", 0.75) in fake.props and ("Pan", -240) in fake.props
+    assert fake.settings["timelineResolutionWidth"] == "1920"
+    colors = sorted(m[1] for m in fake.markers)
+    assert colors == ["Blue", "Red"]  # one segment start, one shot needing a frame grab

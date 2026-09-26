@@ -105,6 +105,7 @@ def build_manifest(project, brand: dict, links_bar: list, sources_url: str) -> d
         dur = float(meta.get("duration_sec") or 3)
         animation.append({"asset_id": a.id, "title": a.title, "concept": meta.get("concept", a.body),
                           "url": a.url, "path": a.path, "generated": bool(meta.get("generated")),
+                          "on_screen_text": meta.get("on_screen_text", ""),
                           "start": round(max(at - dur / 2, 0), 2),
                           "end": round(min(at + dur / 2, duration), 2)})
 
@@ -155,13 +156,19 @@ def _local_image(item: dict, workdir: Path) -> Path | None:
     return None
 
 
-def render_mp4(manifest: dict, out: Path) -> dict:
-    """Burn the manifest into an MP4 with ffmpeg. Returns a report dict."""
+def render_mp4(manifest: dict, out: Path, plate_only: bool = False) -> dict:
+    """Burn the manifest into an MP4 with ffmpeg. Returns a report dict.
+
+    plate_only=True renders just the layout frame (links bar, host/logo panel,
+    sources link) with no main visuals and no audio — the V1 plate for Resolve.
+    """
     ff = integrations.ffmpeg()
     if not ff:
         raise integrations.IntegrationError("ffmpeg is not installed on this server — the web player still works.")
+    if plate_only:
+        manifest = {**manifest, "visuals": [], "animation": []}
     voice = manifest.get("voice") or {}
-    if not voice.get("path") or not Path(voice["path"]).exists():
+    if not plate_only and (not voice.get("path") or not Path(voice["path"]).exists()):
         raise integrations.IntegrationError("Render needs the narration audio (run the Voice step first).")
 
     workdir = out.parent
@@ -236,6 +243,14 @@ def render_mp4(manifest: dict, out: Path) -> dict:
             text("brand", brand.get("name", "DanDon Media"), 1480, 250, 44)
 
     filters.append(f"{last}format=yuv420p[vout]")
+
+    if plate_only:
+        cmd = [ff, "-y", *inputs, "-filter_complex", ";".join(filters), "-map", "[vout]", "-t", str(D),
+               "-r", "30", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an", str(out)]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
+        if proc.returncode != 0:
+            raise integrations.IntegrationError("ffmpeg failed: " + proc.stderr[-1500:])
+        return {"output": str(out)}
 
     # Audio: narration + music bed(s) ducked underneath
     inputs += ["-i", voice["path"]]

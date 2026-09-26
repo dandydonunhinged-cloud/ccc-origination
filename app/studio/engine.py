@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from ..db import SessionLocal
 from . import llm, integrations, render
+from .capture import CaptureError, capture_pdf, fetch_pdf, looks_like_pdf, page_hint_from
 from .models import (
     StudioProject, StudioTask, StudioSegment, StudioSpecialist, StudioSource, StudioAsset,
     StudioMessage, StudioPost,
@@ -432,6 +433,7 @@ OUTPUT_CONTRACT:visuals"""
     by_id = {f"S{s.id}": s for s in project.sources}
     segs = list(project.segments)
     _replace_assets(db, project, "visual")
+    created = []
     ok = gaps = 0
     for i, shot in enumerate(data.get("shots", [])):
         src = by_id.get(str(shot.get("source_id") or "").strip())
@@ -440,12 +442,43 @@ OUTPUT_CONTRACT:visuals"""
         status = "ready" if src else "needs_sourcing"
         ok += bool(src)
         gaps += not src
-        db.add(StudioAsset(project_id=project.id, kind="visual", segment_id=seg.id if seg else None,
-                           source_id=src.id if src else None, rank=i, status=status,
-                           title=(shot.get("caption") or shot.get("cue") or f"Shot {i + 1}")[:300],
-                           url=shot.get("image_url") or (src.url if src else ""),
-                           meta={**shot, "auto": True}))
-    return f"{ok} sourced shots, {gaps} beats still need a real source.", data, "review"
+        shot_asset = StudioAsset(project_id=project.id, kind="visual", segment_id=seg.id if seg else None,
+                                 source=src, rank=i, status=status,
+                                 title=(shot.get("caption") or shot.get("cue") or f"Shot {i + 1}")[:300],
+                                 url=shot.get("image_url") or (src.url if src else ""),
+                                 meta={**shot, "auto": True})
+        project.assets.append(shot_asset)
+        created.append(shot_asset)
+    db.flush()
+    msg = f"{ok} sourced shots, {gaps} beats still need a real source."
+    grabbed = 0
+    for a in [a for a in created if a.source is not None and not a.path][:25]:
+        try:
+            if capture_visual(db, a):
+                grabbed += 1
+        except CaptureError as e:
+            a.meta = {**(a.meta or {}), "capture_error": str(e)}
+    if grabbed:
+        msg += f" {grabbed} document frames captured from the source PDFs with the passage highlighted."
+    return msg, data, "review"
+
+
+def capture_visual(db: Session, asset: StudioAsset) -> bool:
+    """Grab the real document frame for a fact visual (PDF page, passage highlighted)."""
+    src = asset.source
+    if src is None:
+        raise CaptureError("This shot has no source to capture from.")
+    if not looks_like_pdf(src.url, src.kind):
+        return False
+    meta = asset.meta or {}
+    cache = integrations.MEDIA_DIR / asset.project.public_id / "pdf" / f"S{src.id}.pdf"
+    data = fetch_pdf(src.url, cache)
+    out = integrations.media_path(asset.project.public_id, f"visual_{asset.id}.png")
+    report = capture_pdf(data, meta.get("highlight_text") or src.quote, out, page_hint_from(meta.get("page")))
+    asset.path = str(out)
+    asset.url = integrations.media_url(out) + f"?v={int(datetime.now().timestamp())}"
+    asset.meta = {**meta, "capture": report, "capture_error": None}
+    return True
 
 
 def h_animation(db, task, project):

@@ -146,6 +146,14 @@ video. It sits behind the same admin login as `/admin/`.
 - **Broadcast player** (`/studio/episode/<id>/player/`): the render layout
   (3/4 visual, links bar under it, host animation or logo upper right, clickable
   sources link under that) playing the edit list against the narration.
+- **Real document frames**: for PDF sources (bills, filings, IG/GAO reports) the
+  Visuals step downloads the PDF, finds the quoted passage, highlights it and saves
+  a 16:9 frame. The frame is the real page. Other pages get a "frame grab" marker.
+- **DaVinci Resolve Studio + Blender package** (Production tab → download): the media,
+  `resolve_build.py` (builds the timeline in the DanDon layout: plate / fact visuals /
+  connective tissue / narration / music, plus segment and needs-frame-grab markers),
+  `render_bumpers.bat` + `blender/bumper.py` (GPU bumpers; drop a Meshy model in as
+  `blender/host.glb`), the source PDFs for Acrobat Pro, and both scripts.
 - **Transparency page** (`/studio/p/<public_id>/sources/`, public): every source
   used, with the exact passage shown on screen.
 

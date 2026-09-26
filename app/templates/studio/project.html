@@ -290,6 +290,8 @@
 
       <h2 style="margin-top:1rem">Render</h2>
       <a class="btn" href="/studio/episode/{{ p.id }}/player/" target="_blank">▶ Open the broadcast player</a>
+      <a class="btn btn-primary" href="/studio/api/project/{{ p.id }}/handoff.zip" title="Media, Resolve build script, Blender bumpers, source PDFs">⬇ DaVinci Resolve + Blender package</a>
+      <p class="small muted">Unzip on the workstation, run <code>render_bumpers.bat</code> (Blender, optional; drop a Meshy model in as <code>blender\host.glb</code>), then <code>python resolve_build.py</code> with Resolve Studio open.</p>
       {% for a in by_kind.get('render', []) %}
         <div class="asset" style="margin-top:.5rem"><b>{{ a.title }}</b><video controls src="{{ a.url }}"></video><a href="{{ a.url }}" download>Download MP4</a></div>
       {% endfor %}
@@ -319,9 +321,13 @@
           <select data-e="asset:{{ a.id }}:status" style="width:auto">
             {% for st in ['needs_sourcing', 'ready', 'approved'] %}<option {{ 'selected' if st == a.status }}>{{ st }}</option>{% endfor %}
           </select>
+          {% if a.source %}<button class="btn btn-xs" data-act="POST /studio/api/asset/{{ a.id }}/capture" data-msg="Frame captured">📄 Capture from source PDF</button>{% endif %}
           <input type="file" accept="image/*,video/*" data-upload="{{ a.id }}" style="width:auto">
           {% if a.path %}<a href="{{ a.url }}" target="_blank" class="small">attached ↗</a>{% endif %}
         </div>
+        {% if a.path and (a.url or '').split('?')[0].lower().endswith('.png') %}<img src="{{ a.url }}" alt="" style="max-width:100%;border-radius:6px;margin-top:.3rem">{% endif %}
+        {% if (a.meta or {}).get('capture') %}<div class="small muted">Captured page {{ a.meta.capture.page }}{{ ', passage highlighted' if a.meta.capture.highlighted else ' — passage not found, check the page' }}</div>{% endif %}
+        {% if (a.meta or {}).get('capture_error') %}<div class="small" style="color:var(--amber)">{{ a.meta.capture_error }}</div>{% endif %}
       </div>
       {% else %}<p class="muted small">Produced by the Visuals step.</p>{% endfor %}
 

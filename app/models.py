@@ -232,7 +232,7 @@ class Deal(Base):
     entity         = relationship("Entity", back_populates="deals")
     property       = relationship("Property", back_populates="deals")
     referral_partner = relationship("Partner", back_populates="deals",
-                                     foreign_keys=[referral_partner_id])
+                                     primaryjoin="Partner.id == foreign(Deal.referral_partner_id)")
     # referral_partner_id is a plain FK column; we look up the Borrower manually.
     # Avoids the ambiguous-FK problem with two FKs from deals to borrowers.
     documents      = relationship("Document", back_populates="deal", cascade="all, delete-orphan")
@@ -614,7 +614,7 @@ class Partner(Base):
     updated_at      = Column(DateTime, default=now_utc, onupdate=now_utc, nullable=False)
 
     deals           = relationship("Deal", back_populates="referral_partner",
-                                   foreign_keys="Deal.referral_partner_id")
+                                   primaryjoin="Partner.id == foreign(Deal.referral_partner_id)")
 
 
 class ScheduleTask(Base):

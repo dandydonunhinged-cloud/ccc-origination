@@ -32,6 +32,7 @@ db_session = scoped_session(SessionLocal)
 
 def init_db():
     """Create all tables. Idempotent."""
+    from .studio import models as _studio_models  # noqa: F401 — registers studio tables on Base
     Base.metadata.create_all(engine)
 
 

@@ -10,6 +10,7 @@
   {% if info %}<div class="flash">{{ info }}</div>{% endif %}
 
   <form method="post" action="/admin/login/" class="card">
+    <input type="hidden" name="next" value="{{ next or '' }}">
     <div class="form-row">
       <label for="email">Email</label>
       <input id="email" name="email" type="email" required autofocus value="don@dandydon.media">

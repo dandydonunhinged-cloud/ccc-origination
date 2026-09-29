@@ -88,6 +88,10 @@ async def startup():
         counts = seed.seed_lenders(db)
         if counts["lenders_added"] or counts["products_added"]:
             logger.info(f"Seeded {counts['lenders_added']} lenders + {counts['products_added']} products")
+        from .studio import pipeline as studio_pipeline
+        added = studio_pipeline.seed(db)
+        if added:
+            logger.info(f"Seeded {added} studio specialists")
     finally:
         db.close()
     # Schedule daily jobs (stub for v1; APScheduler wired in v2)
@@ -117,6 +121,10 @@ app.include_router(static_pages.router)
 app.include_router(partners.router)
 app.include_router(widget.router)
 
+# DanDon Media Studio — content production pipeline + project tracker (/studio/)
+from .studio import routes as studio_routes
+studio_routes.install(app)
+
 
 # ---------------------------------------------------------------------------
 # Default route: marketing landing
@@ -138,6 +146,7 @@ async def root():
             "marketing": "/mortgage/",
             "borrower_portal": "/portal/",
             "broker_command_surface": "/admin/",
+            "studio": "/studio/",
             "health": "/api/health",
         },
     })

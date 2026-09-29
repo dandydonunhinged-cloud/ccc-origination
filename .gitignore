@@ -23,3 +23,5 @@ probe.py
 probe.out
 probe.err
 .venv/
+studio_media/
+.pytest_cache/

@@ -52,9 +52,15 @@ templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 # ---------------------------------------------------------------------------
 
 @router.get("/admin/login/", response_class=HTMLResponse)
-async def admin_login_get(request: Request, error: str = ""):
+async def admin_login_get(request: Request, error: str = "", next: str = ""):
     return templates.TemplateResponse("broker/login.html",
-                                      {"request": request, "error": error, "config": config})
+                                      {"request": request, "error": error, "config": config,
+                                       "next": _safe_next(next)})
+
+
+def _safe_next(url: str) -> str:
+    """Only allow same-site relative redirects after login."""
+    return url if url.startswith("/") and not url.startswith(("//", "/\\")) else ""
 
 
 @router.post("/admin/login/")
@@ -62,6 +68,7 @@ async def admin_login_post(
     request: Request,
     email: str = Form(...),
     password: str = Form(...),
+    next: str = Form(""),
     db: Session = Depends(get_db),
 ):
     """In v1 we use a simple password check against config.ADMIN_PASSWORD.
@@ -78,10 +85,10 @@ async def admin_login_post(
         return templates.TemplateResponse("broker/login.html",
                                           {"request": request,
                                            "error": "Invalid credentials.",
-                                           "config": config},
+                                           "config": config, "next": _safe_next(next)},
                                           status_code=401)
     token, expires = issue_session(db, email)
-    response = RedirectResponse(url="/admin/", status_code=303)
+    response = RedirectResponse(url=_safe_next(next) or "/admin/", status_code=303)
     set_broker_cookie(response, token, expires)
     return response
 

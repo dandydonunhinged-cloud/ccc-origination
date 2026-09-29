@@ -1,0 +1,125 @@
+{% extends "studio/base.html" %}
+{% set nav = 'settings' %}
+{% block title %}Settings{% endblock %}
+{% block body %}
+<h1>Settings</h1>
+
+<section class="panel">
+  <h2>Connections</h2>
+  <table class="t">
+    <tr><th>Service</th><th>Status</th><th>How to connect (server environment variables)</th></tr>
+    <tr><td>AI specialists (Claude)</td><td><span class="pill {{ 's-done' if status.llm == 'anthropic' else 's-blocked' }}">{{ status.llm }}</span></td><td><code>ANTHROPIC_API_KEY</code></td></tr>
+    <tr><td>OmniVoice (text-to-speech)</td><td><span class="pill {{ 's-done' if status.omnivoice else 's-blocked' }}">{{ 'connected' if status.omnivoice else 'not set' }}</span></td><td><code>OMNIVOICE_URL</code> (OpenAI-compatible <code>/v1/audio/speech</code> server), optional <code>OMNIVOICE_API_KEY</code></td></tr>
+    <tr><td>OnlySocial (publishing)</td><td><span class="pill {{ 's-done' if status.onlysocial else 's-blocked' }}">{{ 'connected' if status.onlysocial else 'not set' }}</span></td><td><code>ONLYSOCIAL_TOKEN</code>, <code>ONLYSOCIAL_WORKSPACE</code> (workspace UUID)</td></tr>
+    <tr><td>Image model (Qwen-Image-2.1 on your GPU)</td><td><span class="pill {{ 's-done' if status.imagegen else 's-blocked' }}">{{ 'connected' if status.imagegen else 'not set' }}</span></td><td><code>IMAGEGEN_URL</code> + <code>IMAGEGEN_COMFY_WORKFLOW</code> (ComfyUI, default) — or <code>IMAGEGEN_API=openai</code> for an OpenAI-compatible <code>/v1/images/generations</code> server. Animation keyframes and thumbnails only.</td></tr>
+    <tr><td>ffmpeg (MP4 render)</td><td><span class="pill {{ 's-done' if status.ffmpeg else 's-blocked' }}">{{ 'installed' if status.ffmpeg else 'missing' }}</span></td><td>Installed in the Docker image. Without it the browser player still works.</td></tr>
+  </table>
+</section>
+
+<div class="grid grid-halves">
+  <section class="panel">
+    <h2>Brand & layout</h2>
+    <label>Brand name</label><input id="b-name" value="{{ settings.brand.name }}">
+    <label>Accent colour</label><input id="b-accent" value="{{ settings.brand.accent }}">
+    <label>Logo (upper-right panel when there's no host animation)</label>
+    <div class="row"><img src="{{ settings.brand.logo_url }}" alt="" style="height:48px"><input type="file" accept="image/*" data-brand-upload="logo" style="width:auto"></div>
+    <label>Host animation (you / animated DanDon — loops in the upper-right panel)</label>
+    <div class="row">{% if settings.brand.host_animation_url %}<video src="{{ settings.brand.host_animation_url }}" style="height:64px;width:auto" muted autoplay loop></video>{% endif %}
+      <input type="file" accept="video/*,image/*" data-brand-upload="host_animation" style="width:auto"></div>
+    <label>Public base URL (for the sources link printed on screen)</label>
+    <input id="public-base" value="{{ settings.public_base_url or '' }}" placeholder="https://clickclickclose.click">
+    <button class="btn btn-primary btn-xs" id="save-brand" style="margin-top:.6rem">Save brand</button>
+
+    <h2 style="margin-top:1.2rem">Links bar (under the main visual)</h2>
+    <ul class="sortable" id="links" data-entity="none"></ul>
+    <div class="row"><button class="btn btn-xs" id="link-add">+ Add link</button><button class="btn btn-primary btn-xs" id="save-links">Save links</button></div>
+  </section>
+
+  <section class="panel">
+    <h2>Platforms (OnlySocial)</h2>
+    <p class="small muted">The destinations the Social Producer writes for. Link each to its OnlySocial account id.</p>
+    <table class="t" id="platforms"></table>
+    <div class="row" style="margin-top:.5rem">
+      <button class="btn btn-xs" id="pf-add">+ Add platform</button>
+      <button class="btn btn-xs" id="load-accounts">Load accounts from OnlySocial</button>
+      <button class="btn btn-primary btn-xs" id="save-platforms">Save platforms</button>
+    </div>
+    <div id="accounts" class="small" style="margin-top:.5rem"></div>
+
+    <h2 style="margin-top:1.2rem">Voice (OmniVoice)</h2>
+    <div class="grid grid-halves">
+      <div><label>Voice</label><input id="v-voice" value="{{ settings.voice.voice }}"></div>
+      <div><label>Model</label><input id="v-model" value="{{ settings.voice.model }}"></div>
+      <div><label>Speed</label><input id="v-speed" type="number" step="0.05" value="{{ settings.voice.speed }}"></div>
+      <div><label>Format</label><select id="v-format">{% for f in ['mp3', 'wav', 'opus', 'flac'] %}<option {{ 'selected' if f == settings.voice.format }}>{{ f }}</option>{% endfor %}</select></div>
+    </div>
+    <button class="btn btn-primary btn-xs" id="save-voice" style="margin-top:.6rem">Save voice</button>
+
+    <h2 style="margin-top:1.2rem">Image model</h2>
+    <p class="small muted">Used for animation keyframes and thumbnails only. Fact visuals are always real documents. Qwen-Image-2.1's license is non-commercial — check it covers your use.</p>
+    <label>Style prefix (added to every prompt)</label><input id="ig-style" value="{{ settings.imagegen.style_prefix }}">
+    <label>Negative prompt</label><input id="ig-neg" value="{{ settings.imagegen.negative_prompt }}">
+    <div class="grid grid-halves">
+      <div><label>Width</label><input id="ig-w" type="number" step="64" value="{{ settings.imagegen.width }}"></div>
+      <div><label>Height</label><input id="ig-h" type="number" step="64" value="{{ settings.imagegen.height }}"></div>
+      <div><label>Steps</label><input id="ig-steps" type="number" value="{{ settings.imagegen.steps }}"></div>
+    </div>
+    <button class="btn btn-primary btn-xs" id="save-imagegen" style="margin-top:.6rem">Save image settings</button>
+  </section>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const brand = {{ settings.brand | tojson }};
+  let links = {{ settings.links_bar | tojson }};
+  let platforms = {{ settings.platforms | tojson }};
+  const v = (id) => document.getElementById(id).value;
+  const post = (key, body) => Studio.api("POST", `/studio/api/settings/${key}`, body).then(() => Studio.toast("Saved"));
+  const esc = Studio.esc;
+
+  document.getElementById("save-brand").onclick = async () => {
+    await post("brand", { ...brand, name: v("b-name"), accent: v("b-accent") });
+    await post("public_base_url", v("public-base").trim());
+  };
+  document.querySelectorAll("[data-brand-upload]").forEach((inp) => inp.addEventListener("change", async () => {
+    const fd = new FormData(); fd.append("file", inp.files[0]);
+    await Studio.api("POST", `/studio/api/settings/brand/upload/${inp.dataset.brandUpload}`, fd, true);
+    location.reload();
+  }));
+
+  const linksEl = document.getElementById("links");
+  const drawLinks = () => { linksEl.innerHTML = links.map((l, i) => `<li data-id="${i}" draggable="true"><span class="handle">⠿</span>
+      <input data-li="${i}" data-f="label" value="${esc(l.label)}" style="max-width:140px"><input data-li="${i}" data-f="url" value="${esc(l.url)}" placeholder="https://…">
+      <button class="icon-btn btn-danger" data-ldel="${i}">✕</button></li>`).join(""); };
+  drawLinks();
+  linksEl.addEventListener("input", (e) => { const el = e.target.closest("[data-li]"); if (el) links[+el.dataset.li][el.dataset.f] = el.value; });
+  linksEl.addEventListener("click", (e) => { const d = e.target.closest("[data-ldel]"); if (d) { links.splice(+d.dataset.ldel, 1); drawLinks(); } });
+  linksEl.dataset.onsave = "__linksOrder";
+  window.__linksOrder = () => { links = [...linksEl.children].map((li) => links[+li.dataset.id]); drawLinks(); };
+  document.getElementById("link-add").onclick = () => { links.push({ label: "", url: "" }); drawLinks(); };
+  document.getElementById("save-links").onclick = () => post("links_bar", links);
+
+  const pfEl = document.getElementById("platforms");
+  const drawPf = () => { pfEl.innerHTML = "<tr><th>On</th><th>Key</th><th>Name</th><th>OnlySocial account id</th><th></th></tr>" + platforms.map((p, i) => `<tr>
+      <td><input type="checkbox" data-pi="${i}" data-f="enabled" ${p.enabled ? "checked" : ""}></td>
+      <td><input data-pi="${i}" data-f="key" value="${esc(p.key)}" class="mono"></td>
+      <td><input data-pi="${i}" data-f="name" value="${esc(p.name)}"></td>
+      <td><input data-pi="${i}" data-f="onlysocial_account_id" value="${esc(p.onlysocial_account_id || "")}" class="mono"></td>
+      <td><button class="icon-btn btn-danger" data-pdel="${i}">✕</button></td></tr>`).join(""); };
+  drawPf();
+  pfEl.addEventListener("input", (e) => { const el = e.target.closest("[data-pi]"); if (el) platforms[+el.dataset.pi][el.dataset.f] = el.type === "checkbox" ? el.checked : el.value; });
+  pfEl.addEventListener("click", (e) => { const d = e.target.closest("[data-pdel]"); if (d) { platforms.splice(+d.dataset.pdel, 1); drawPf(); } });
+  document.getElementById("pf-add").onclick = () => { platforms.push({ key: "", name: "", enabled: true, onlysocial_account_id: "" }); drawPf(); };
+  document.getElementById("save-platforms").onclick = () => post("platforms", platforms);
+  document.getElementById("load-accounts").onclick = async () => {
+    const r = await Studio.api("GET", "/studio/api/onlysocial/accounts");
+    document.getElementById("accounts").innerHTML = "<b>OnlySocial accounts:</b><br>" + (r.accounts || []).map((a) =>
+      `<span class="mono">${esc(a.id)}</span> — ${esc(a.provider || a.platform || "")} ${esc(a.name || a.username || "")}`).join("<br>");
+  };
+
+  document.getElementById("save-imagegen").onclick = () => post("imagegen", { style_prefix: v("ig-style"), negative_prompt: v("ig-neg"),
+    width: Number(v("ig-w")), height: Number(v("ig-h")), steps: Number(v("ig-steps")) });
+  document.getElementById("save-voice").onclick = () => post("voice", { voice: v("v-voice"), model: v("v-model"), speed: Number(v("v-speed")), format: v("v-format") });
+});
+</script>
+{% endblock %}

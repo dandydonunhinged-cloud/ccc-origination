@@ -1,0 +1,586 @@
+{% extends "studio/base.html" %}
+{% block title %}{{ p.title }}{% endblock %}
+
+{% macro task_card(t) -%}
+<li data-id="{{ t.id }}" draggable="true" class="card">
+  <div class="t" data-open-task="{{ t.id }}">{% if t.status == 'running' %}<span class="running-dot"></span> {% endif %}{{ t.title }}</div>
+  <div class="meta">
+    <span class="pill">{{ STAGE_LABELS.get(t.stage, t.stage) }}</span>
+    {% if t.specialist %}<span class="pill">{{ spec_names.get(t.specialist, t.specialist) }}</span>{% endif %}
+    {% if not t.auto %}<span class="pill" title="Human step">👤 you</span>{% endif %}
+  </div>
+  {% if t.error %}<div class="err">⚠ {{ t.error[:160] }}</div>{% endif %}
+  <div class="ctl">
+    <span>
+      <button class="icon-btn" data-move="left" title="Move back a column">◀</button>
+      <button class="icon-btn" data-move="right" title="Move forward a column">▶</button>
+    </span>
+    <span>
+      <button class="icon-btn" data-move="up" title="Move ahead of the task above">▲</button>
+      <button class="icon-btn" data-move="down" title="Move behind the task below">▼</button>
+      {% if t.auto and t.status in ('todo', 'blocked', 'review') %}<button class="icon-btn" data-act="POST /studio/api/task/{{ t.id }}/run" title="Run this specialist">▶ run</button>{% endif %}
+      {% if t.status == 'review' %}<button class="icon-btn" data-act="POST /studio/api/task/{{ t.id }}/approve" title="Approve">✓</button>{% endif %}
+    </span>
+  </div>
+</li>
+{%- endmacro %}
+
+{% block body %}
+<section class="panel">
+  <div class="row spread">
+    <div class="grow">
+      <div class="row small muted">
+        <span class="pill k-{{ p.kind }}">{{ p.kind }}</span>
+        {% if p.parent %}<span>in series <a href="/studio/project/{{ p.parent.id }}/">{{ p.parent.title }}</a></span>{% endif %}
+        <span>· {{ pr.done }}/{{ pr.total }} tasks done</span>
+        {% if pr.running %}<span><span class="running-dot"></span> specialist working…</span>{% endif %}
+      </div>
+      <input class="inline" style="font-size:1.5rem;font-weight:800" data-e="project:{{ p.id }}:title" value="{{ p.title }}">
+    </div>
+    <div class="row">
+      <select data-e="project:{{ p.id }}:priority" style="width:auto" title="Priority">
+        {% for x in PRIORITIES %}<option {{ 'selected' if x == p.priority }}>{{ x }}</option>{% endfor %}
+      </select>
+      <select data-e="project:{{ p.id }}:status" style="width:auto" title="Status">
+        {% for x in PROJECT_STATUSES %}<option {{ 'selected' if x == p.status }}>{{ x }}</option>{% endfor %}
+      </select>
+      <label class="row small" style="margin:0;text-transform:none;letter-spacing:0" title="Approve each step automatically and start the next one">
+        <input type="checkbox" id="autopilot" {{ 'checked' if (p.data or {}).get('autopilot') }}> Autopilot
+      </label>
+      <button class="btn btn-primary" data-act="POST /studio/api/project/{{ p.id }}/next" data-msg="Started">▶ Run next step</button>
+    </div>
+  </div>
+
+  <div class="stepper" style="margin-top:1rem">
+    {% for st in stages %}
+      {% set st_tasks = p.tasks | selectattr('stage', 'equalto', st) | list %}
+      {% set st_done = (st_tasks and (st_tasks | rejectattr('status', 'equalto', 'done') | list | length == 0)) or (st == 'episodes' and children) %}
+      {% set cls = 'done' if st_done else ('current' if st == pr.stage else '') %}
+      <div class="step {{ cls }}">{{ STAGE_LABELS.get(st, st) }}</div>
+    {% endfor %}
+  </div>
+</section>
+
+<nav class="tabs">
+  <button data-tab="board">Board</button>
+  <button data-tab="pipeline">Pipeline</button>
+  {% if p.kind == 'series' %}<button data-tab="spock">Topics & Spock</button><button data-tab="episodes">Episodes ({{ children|length }})</button>
+  {% else %}<button data-tab="spock">Spock</button>{% endif %}
+  {% if p.kind in ('episode', 'documentary') %}<button data-tab="segments">Segments ({{ p.segments|length }})</button>{% endif %}
+  <button data-tab="sources">Sources ({{ p.sources|length }})</button>
+  {% if p.kind in ('episode', 'documentary') %}<button data-tab="assets">Production ({{ p.assets|length }})</button>
+  <button data-tab="publish">Publish</button>{% endif %}
+  <button data-tab="brief">Brief & settings</button>
+</nav>
+
+<!-- BOARD -->
+<section class="tab" id="tab-board">
+  <div class="board">
+    {% for col in TASK_STATUSES %}
+    {% set col_tasks = p.tasks | selectattr('status', 'equalto', col) | sort(attribute='rank') %}
+    <div class="col">
+      <h3><span>{{ {'todo': 'To do', 'running': 'In progress', 'review': 'Review', 'done': 'Done', 'blocked': 'Blocked'}[col] }}</span><span data-count-for="{{ col }}">{{ col_tasks|length }}</span></h3>
+      <ul class="sortable" data-entity="task" data-status="{{ col }}" data-group="board">
+        {% for t in col_tasks %}{{ task_card(t) }}{% endfor %}
+      </ul>
+    </div>
+    {% endfor %}
+  </div>
+  <details class="panel" style="margin-top:1rem">
+    <summary><b>+ Add a task</b></summary>
+    <div class="grid grid-halves" style="margin-top:.6rem">
+      <div><label>Title</label><input id="nt-title"></div>
+      <div><label>Assign to specialist</label>
+        <select id="nt-spec"><option value="">— you (human task) —</option>
+          {% for s in specialists %}<option value="{{ s.key }}">{{ s.name }} — {{ s.role }}</option>{% endfor %}
+        </select></div>
+      <div><label>Stage</label><select id="nt-stage">{% for k, v in STAGE_LABELS.items() %}<option value="{{ k }}" {{ 'selected' if k == 'custom' }}>{{ v }}</option>{% endfor %}</select></div>
+      <div><label>Instructions</label><textarea id="nt-instr" style="min-height:42px"></textarea></div>
+    </div>
+    <button class="btn btn-primary" id="nt-add" style="margin-top:.6rem">Add task</button>
+  </details>
+</section>
+
+<!-- PIPELINE -->
+<section class="tab" id="tab-pipeline">
+  <div class="panel">
+    <p class="small muted">Tasks in run order. Drag or use ▲▼ to move a task in front of or behind another. Each model step lands in <b>Review</b> for your sign-off (or is approved automatically on Autopilot).</p>
+    <ul class="sortable" data-entity="task">
+      {% for t in p.tasks | sort(attribute='rank') %}
+      <li data-id="{{ t.id }}" draggable="true">
+        <span class="handle">⠿</span><span class="rankno">{{ loop.index }}</span>
+        <span class="pill s-{{ t.status }}">{{ t.status }}</span>
+        <span class="pill">{{ STAGE_LABELS.get(t.stage, t.stage) }}</span>
+        <a href="#" class="grow" data-open-task="{{ t.id }}">{{ t.title }}</a>
+        <span class="small muted">{{ spec_names.get(t.specialist, '👤 you') if t.specialist else '👤 you' }}</span>
+        {% if t.auto and t.status in ('todo', 'blocked', 'review') %}<button class="btn btn-xs" data-act="POST /studio/api/task/{{ t.id }}/run">▶ Run</button>{% endif %}
+        {% if t.status in ('review', 'todo', 'blocked') %}<button class="btn btn-xs" data-act="POST /studio/api/task/{{ t.id }}/approve" title="Mark done">✓ Done</button>{% endif %}
+        <span class="movers"><button class="icon-btn" data-move="up">▲</button><button class="icon-btn" data-move="down">▼</button></span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if p.kind != 'project' %}<button class="btn btn-xs btn-ghost" data-act="POST /studio/api/project/{{ p.id }}/populate">Restore missing template steps</button>{% endif %}
+  </div>
+</section>
+
+<!-- SPOCK / TOPICS -->
+<section class="tab" id="tab-spock">
+  <div class="grid {{ 'grid-halves' if p.kind == 'series' else '' }}">
+    {% if p.kind == 'series' %}
+    <div class="panel">
+      {% set inv = (p.data or {}).get('investigation') %}
+      {% if inv %}
+      <div class="{{ 'banner' if inv.verdict != 'substantiated' else 'panel' }}" style="margin-bottom:.8rem">
+        <b>Investigation verdict: {{ inv.verdict }}</b> (confidence {{ inv.confidence }})<br>
+        <span class="small">{{ inv.summary }}</span>
+        {% if inv.gaps %}<div class="small" style="margin-top:.4rem"><b>Gaps:</b> {{ inv.gaps | join('; ') }}</div>{% endif %}
+      </div>
+      {% endif %}
+      <h2>Candidate topics</h2>
+      <p class="small muted">Drag to set the episode order. Untick to leave a topic out. Edit anything. Then lock the order to create the episodes.</p>
+      <ul class="sortable" id="topics" data-entity="none"></ul>
+      <div class="row" style="margin-top:.5rem">
+        <button class="btn btn-xs" id="topic-add">+ Add topic</button>
+        <button class="btn btn-xs" data-act="POST /studio/api/project/{{ p.id }}/rank-topics" data-msg="Spock ranked the topics">🖖 Have Spock rank these</button>
+        <button class="btn btn-primary btn-xs" data-act="POST /studio/api/project/{{ p.id }}/lock-episodes" data-confirm="Create an episode for every included topic, in this order?">Lock order & create episodes</button>
+      </div>
+    </div>
+    {% endif %}
+    <div class="panel">
+      <h2>🖖 Spock</h2>
+      <p class="small muted">Talk it through: sharpen the claim, argue priorities, decide what goes first.</p>
+      <div class="chat" id="chat">
+        {% for m in chat %}<div class="msg {{ m.role }}"><span class="who">{{ 'You' if m.role == 'user' else 'Spock' }}</span>{{ m.content }}</div>{% endfor %}
+      </div>
+      <div class="composer">
+        <textarea id="chat-in" placeholder="Ask Spock… (Ctrl/⌘+Enter)"></textarea>
+        <button class="btn btn-primary" id="chat-send">Send</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+{% if p.kind == 'series' %}
+<section class="tab" id="tab-episodes">
+  <div class="panel">
+    <p class="small muted">Episode order. Top airs first.</p>
+    <ul class="sortable" data-entity="project">
+      {% for c in children %}
+      {% set cp = progress(c) %}
+      <li data-id="{{ c.id }}" draggable="true">
+        <span class="handle">⠿</span><span class="rankno">{{ loop.index }}</span>
+        <a class="grow" href="/studio/project/{{ c.id }}/">{{ c.title }}</a>
+        <span class="small muted">{{ STAGE_LABELS.get(cp.stage, cp.stage) }}</span>
+        <span class="bar"><i style="width:{{ cp.pct }}%"></i></span>
+        <span class="pill">{{ c.status }}</span>
+        <span class="movers"><button class="icon-btn" data-move="up">▲</button><button class="icon-btn" data-move="down">▼</button></span>
+      </li>
+      {% endfor %}
+    </ul>
+    <a class="btn btn-xs" href="/studio/new/episode/?parent={{ p.id }}">+ Add an episode by hand</a>
+  </div>
+</section>
+{% endif %}
+
+{% if p.kind in ('episode', 'documentary') %}
+<!-- SEGMENTS -->
+<section class="tab" id="tab-segments">
+  {% set story = (p.data or {}).get('story') %}
+  {% if story %}<div class="panel"><dl class="kv"><dt>Logline</dt><dd>{{ story.logline }}</dd><dt>Thesis</dt><dd>{{ story.thesis }}</dd><dt>Educational bomb</dt><dd>{{ story.bomb }}</dd></dl></div>{% endif %}
+  {% set total_min = p.segments | sum(attribute='minutes') %}
+  <p class="small muted">Rundown: {{ '%.1f'|format(total_min) }} min planned. Each segment has its own writer. Drag to reorder.</p>
+  <ul class="sortable" data-entity="segment">
+    {% for s in p.segments %}
+    <li data-id="{{ s.id }}" draggable="true" style="flex-direction:column;align-items:stretch">
+      <div class="row">
+        <span class="handle">⠿</span><span class="rankno">{{ loop.index }}</span>
+        <input class="inline grow" style="font-weight:700" data-e="segment:{{ s.id }}:title" value="{{ s.title }}">
+        <select data-e="segment:{{ s.id }}:format" style="width:auto">
+          {% for f in ['cold_open','headlines','deep_dive','correspondent','interview','convergence','button','act'] %}<option {{ 'selected' if f == s.format }}>{{ f }}</option>{% endfor %}
+        </select>
+        <input type="number" step="0.25" data-type="number" data-e="segment:{{ s.id }}:minutes" value="{{ s.minutes }}" style="width:80px" title="minutes">
+        <select data-e="segment:{{ s.id }}:writer" style="width:auto" title="Writer">
+          {% for sp in specialists %}<option value="{{ sp.key }}" {{ 'selected' if sp.key == s.writer }}>{{ sp.name }}</option>{% endfor %}
+        </select>
+        <span class="movers"><button class="icon-btn" data-move="up">▲</button><button class="icon-btn" data-move="down">▼</button></span>
+        <button class="icon-btn btn-danger" data-act="DELETE /studio/api/segment/{{ s.id }}" data-confirm="Delete this segment and its writer task?">✕</button>
+      </div>
+      <details>
+        <summary class="small muted">Angle, beats & script {% if s.script %}({{ s.script.split()|length }} words){% else %}(not written){% endif %}</summary>
+        <label>Angle</label><textarea data-e="segment:{{ s.id }}:angle">{{ s.angle }}</textarea>
+        <label>Beats (one per line)</label><textarea data-type="lines" data-e="segment:{{ s.id }}:beats">{{ (s.beats or []) | join('\n') }}</textarea>
+        <label>Script</label><textarea class="script" data-e="segment:{{ s.id }}:script">{{ s.script }}</textarea>
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+  <button class="btn btn-xs" data-act="POST /studio/api/project/{{ p.id }}/segment" data-body='{"title": "New segment"}'>+ Add segment</button>
+</section>
+{% endif %}
+
+<!-- SOURCES -->
+<section class="tab" id="tab-sources">
+  <div class="panel">
+    <div class="row spread">
+      <p class="small muted grow">Every document that substantiates the story. Tick <b>verified</b> once a human has opened it and confirmed it says what we say it says. This list is published at
+        <a href="{{ sources_url }}" target="_blank">{{ sources_url }}</a>.</p>
+    </div>
+    <div class="table-wrap">
+    <ul class="sortable" data-entity="source">
+      {% for s in p.sources %}
+      <li data-id="{{ s.id }}" draggable="true" style="flex-direction:column;align-items:stretch">
+        <div class="row">
+          <span class="handle">⠿</span><span class="rankno">S{{ s.id }}</span>
+          <label class="row small" style="margin:0;text-transform:none"><input type="checkbox" data-e="source:{{ s.id }}:verified" {{ 'checked' if s.verified }}> verified</label>
+          <select data-e="source:{{ s.id }}:kind" style="width:auto">
+            {% for k in ['court_filing','bill','gov_report','dataset','transcript','video','article','other'] %}<option {{ 'selected' if k == s.kind }}>{{ k }}</option>{% endfor %}
+          </select>
+          <input class="inline grow" style="font-weight:700" data-e="source:{{ s.id }}:title" value="{{ s.title }}" placeholder="title">
+          <a href="{{ s.url }}" target="_blank" rel="noopener" class="small">open ↗</a>
+          <button class="icon-btn btn-danger" data-act="DELETE /studio/api/source/{{ s.id }}" data-confirm="Delete this source?">✕</button>
+        </div>
+        <details><summary class="small muted">{{ s.publisher }} {{ s.published }} — {{ s.supports[:120] }}</summary>
+          <div class="grid grid-halves">
+            <div><label>URL</label><input data-e="source:{{ s.id }}:url" value="{{ s.url }}"></div>
+            <div><label>Publisher</label><input data-e="source:{{ s.id }}:publisher" value="{{ s.publisher }}"></div>
+            <div><label>Date</label><input data-e="source:{{ s.id }}:published" value="{{ s.published }}"></div>
+            <div><label>Supports claim</label><input data-e="source:{{ s.id }}:supports" value="{{ s.supports }}"></div>
+          </div>
+          <label>Exact passage (what we show on screen)</label><textarea data-e="source:{{ s.id }}:quote">{{ s.quote }}</textarea>
+          <div class="small muted">added by {{ s.added_by }}</div>
+        </details>
+      </li>
+      {% endfor %}
+    </ul>
+    </div>
+    <details style="margin-top:.6rem"><summary><b>+ Add a source</b></summary>
+      <div class="grid grid-halves" style="margin-top:.5rem">
+        <div><label>URL</label><input id="ns-url"></div>
+        <div><label>Title</label><input id="ns-title"></div>
+        <div><label>Kind</label><select id="ns-kind">{% for k in ['court_filing','bill','gov_report','dataset','transcript','video','article','other'] %}<option>{{ k }}</option>{% endfor %}</select></div>
+        <div><label>Supports claim</label><input id="ns-supports"></div>
+      </div>
+      <label>Exact passage</label><textarea id="ns-quote"></textarea>
+      <button class="btn btn-primary btn-xs" id="ns-add" style="margin-top:.5rem">Add source</button>
+    </details>
+  </div>
+</section>
+
+{% if p.kind in ('episode', 'documentary') %}
+<!-- PRODUCTION ASSETS -->
+<section class="tab" id="tab-assets">
+  {% set by_kind = {} %}
+  {% for a in p.assets %}{% set _ = by_kind.setdefault(a.kind, []).append(a) %}{% endfor %}
+  <div class="grid grid-halves">
+    <div class="panel">
+      <h2>Scripts</h2>
+      {% for a in by_kind.get('script_stage', []) + by_kind.get('script_clean', []) %}
+      <div class="asset">
+        <div class="row spread"><b>{{ a.title }}</b>
+          <span><button class="btn btn-xs" data-copy="asset-body-{{ a.id }}">Copy</button>
+          <button class="btn btn-xs" data-download="asset-body-{{ a.id }}" data-name="{{ p.public_id }}-{{ a.kind }}.txt">Download</button></span></div>
+        <textarea class="script" id="asset-body-{{ a.id }}" data-e="asset:{{ a.id }}:body">{{ a.body }}</textarea>
+      </div>
+      {% else %}<p class="muted small">Produced by the “Two scripts” step.</p>{% endfor %}
+
+      <h2 style="margin-top:1rem">Voice</h2>
+      {% for a in by_kind.get('audio', []) %}
+        <div class="asset"><b>{{ a.title }}</b>{% if a.url %}<audio controls src="{{ a.url }}"></audio>{% endif %}</div>
+      {% else %}<p class="muted small">Produced by the Voice step (OmniVoice), or upload narration below.</p>{% endfor %}
+
+      <h2 style="margin-top:1rem">Render</h2>
+      <a class="btn" href="/studio/episode/{{ p.id }}/player/" target="_blank">▶ Open the broadcast player</a>
+      <a class="btn btn-primary" href="/studio/api/project/{{ p.id }}/handoff.zip" title="Media, Resolve build script, Blender bumpers, source PDFs">⬇ DaVinci Resolve + Blender package</a>
+      <p class="small muted">Unzip on the workstation, run <code>render_bumpers.bat</code> (Blender, optional; drop a Meshy model in as <code>blender\host.glb</code>), then <code>python resolve_build.py</code> with Resolve Studio open.</p>
+      {% for a in by_kind.get('render', []) %}
+        <div class="asset" style="margin-top:.5rem"><b>{{ a.title }}</b><video controls src="{{ a.url }}"></video><a href="{{ a.url }}" download>Download MP4</a></div>
+      {% endfor %}
+    </div>
+
+    <div class="panel">
+      <h2>Visuals — real documents & footage</h2>
+      <p class="small muted">Every shot must trace to a source. Shots marked <b>needs sourcing</b> are left out of the render. Attach an image (page capture, screenshot, still) to burn a shot into the video.</p>
+      {% for a in by_kind.get('visual', []) %}
+      <div class="asset">
+        <div class="row">
+          <span class="pill {{ 's-blocked' if a.status == 'needs_sourcing' else 's-done' }}">{{ a.status }}</span>
+          <input class="inline grow" data-e="asset:{{ a.id }}:title" value="{{ a.title }}">
+          <button class="icon-btn btn-danger" data-act="DELETE /studio/api/asset/{{ a.id }}">✕</button>
+        </div>
+        <div class="small muted">
+          {{ (a.meta or {}).get('visual_type', '') }}
+          {% if a.source %}· source <a href="{{ a.source.url }}" target="_blank">S{{ a.source.id }} {{ a.source.title[:60] }}</a>{% endif %}
+          {% if (a.meta or {}).get('highlight_text') %}· highlight: “{{ a.meta.highlight_text[:120] }}”{% endif %}
+          {% if (a.meta or {}).get('timestamp_in') %}· clip {{ a.meta.timestamp_in }}–{{ a.meta.timestamp_out }}{% endif %}
+        </div>
+        <div class="row" style="margin-top:.3rem">
+          <select data-e="asset:{{ a.id }}:source_id" data-type="number" data-reload style="width:auto">
+            <option value="">— no source —</option>
+            {% for s in p.sources %}<option value="{{ s.id }}" {{ 'selected' if s.id == a.source_id }}>S{{ s.id }} {{ s.title[:50] }}</option>{% endfor %}
+          </select>
+          <select data-e="asset:{{ a.id }}:status" style="width:auto">
+            {% for st in ['needs_sourcing', 'ready', 'approved'] %}<option {{ 'selected' if st == a.status }}>{{ st }}</option>{% endfor %}
+          </select>
+          {% if a.source %}<button class="btn btn-xs" data-act="POST /studio/api/asset/{{ a.id }}/capture" data-msg="Frame captured">📄 Capture from source PDF</button>{% endif %}
+          <input type="file" accept="image/*,video/*" data-upload="{{ a.id }}" style="width:auto">
+          {% if a.path %}<a href="{{ a.url }}" target="_blank" class="small">attached ↗</a>{% endif %}
+        </div>
+        {% if a.path and (a.url or '').split('?')[0].lower().endswith('.png') %}<img src="{{ a.url }}" alt="" style="max-width:100%;border-radius:6px;margin-top:.3rem">{% endif %}
+        {% if (a.meta or {}).get('capture') %}<div class="small muted">Captured page {{ a.meta.capture.page }}{{ ', passage highlighted' if a.meta.capture.highlighted else ' — passage not found, check the page' }}</div>{% endif %}
+        {% if (a.meta or {}).get('capture_error') %}<div class="small" style="color:var(--amber)">{{ a.meta.capture_error }}</div>{% endif %}
+      </div>
+      {% else %}<p class="muted small">Produced by the Visuals step.</p>{% endfor %}
+
+      {% for kind, label, hint in [('animation', 'Animated connective tissue', 'Generate a keyframe on the image model (Qwen-Image-2.1), or attach a rendered animation file. The prompt is editable.'), ('thumbnail', 'Thumbnail', 'Generated from the Social Producer\'s prompt. Edit the prompt and regenerate as needed.'), ('music', 'Music & sound', 'Attach the licensed audio file for each cue; it is mixed under the narration.')] %}
+      <h2 style="margin-top:1rem">{{ label }}</h2>
+      <p class="small muted">{{ hint }}</p>
+      {% for a in by_kind.get(kind, []) %}
+      <div class="asset">
+        <div class="row"><input class="inline grow" style="font-weight:700" data-e="asset:{{ a.id }}:title" value="{{ a.title }}">
+          <button class="icon-btn btn-danger" data-act="DELETE /studio/api/asset/{{ a.id }}">✕</button></div>
+        <textarea data-e="asset:{{ a.id }}:body" style="min-height:50px">{{ a.body }}</textarea>
+        <div class="row small muted">{% for k, v in (a.meta or {}).items() if k not in ('auto', 'concept', 'prompt') and v not in ('', None) %}<span>{{ k }}: {{ v }}</span>{% endfor %}</div>
+        {% if a.path and kind != 'music' and (a.url or '').split('?')[0].lower().endswith(('.png', '.jpg', '.jpeg', '.webp')) %}
+          <img src="{{ a.url }}" alt="" style="max-width:100%;border-radius:6px;margin:.3rem 0">
+        {% endif %}
+        <div class="row"><input type="file" data-upload="{{ a.id }}" accept="{{ 'audio/*' if kind == 'music' else 'video/*,image/*' }}" style="width:auto">
+          {% if kind != 'music' %}<button class="btn btn-xs" data-act="POST /studio/api/asset/{{ a.id }}/generate" data-msg="Image generated" {{ '' if imagegen else 'disabled title="Set IMAGEGEN_URL to enable"' }}>🎨 {{ 'Regenerate' if (a.meta or {}).get('generated') else 'Generate' }} on image model</button>{% endif %}
+          {% if (a.meta or {}).get('generated') %}<span class="pill" title="Made by the local image model — never used as a fact visual">AI-generated</span>{% endif %}
+          {% if a.path %}<a href="{{ a.url }}" target="_blank" class="small">attached ↗</a>{% endif %}</div>
+      </div>
+      {% else %}<p class="muted small">Nothing yet.</p>{% endfor %}
+      {% endfor %}
+
+      <details style="margin-top:1rem"><summary><b>+ Add / upload an asset</b></summary>
+        <form id="asset-form" class="grid grid-halves" style="margin-top:.5rem">
+          <div><label>Kind</label><select name="kind">{% for k in ['visual','animation','thumbnail','music','audio','render'] %}<option>{{ k }}</option>{% endfor %}</select></div>
+          <div><label>Title</label><input name="title"></div>
+          <div><label>URL (optional)</label><input name="url"></div>
+          <div><label>File (optional)</label><input type="file" name="file"></div>
+          <div><button class="btn btn-primary btn-xs" type="submit">Add</button></div>
+        </form>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- PUBLISH -->
+<section class="tab" id="tab-publish">
+  <div class="panel">
+    <div class="row spread">
+      <h2>Posts via OnlySocial</h2>
+      <button class="btn btn-primary" data-act="POST /studio/api/project/{{ p.id }}/publish" data-confirm="Send every APPROVED post to OnlySocial now?" data-msg="Sent to OnlySocial">🚀 Send approved to OnlySocial</button>
+    </div>
+    {% if not onlysocial %}<div class="banner">OnlySocial isn't connected yet — set <code>ONLYSOCIAL_TOKEN</code> and <code>ONLYSOCIAL_WORKSPACE</code>, then link each platform to its account in <a href="/studio/settings/">Settings</a>.</div>{% endif %}
+    <p class="small muted">The Social Producer drafts copy for every enabled platform. Edit, set each to <b>approved</b>, optionally schedule (UTC, <code>YYYY-MM-DD HH:MM</code>), then send. The rendered MP4 is attached automatically.</p>
+    {% set pnames = {} %}{% for pl in platforms %}{% set _ = pnames.update({pl.key: pl.name}) %}{% endfor %}
+    {% for post in p.posts %}
+    <div class="asset">
+      <div class="row">
+        <b style="min-width:90px">{{ pnames.get(post.platform, post.platform) }}</b>
+        <select data-e="post:{{ post.id }}:status" style="width:auto">{% for st in ['draft', 'approved', 'sent', 'failed'] %}<option {{ 'selected' if st == post.status }}>{{ st }}</option>{% endfor %}</select>
+        <input data-e="post:{{ post.id }}:scheduled_for" value="{{ post.scheduled_for }}" placeholder="publish now" style="width:170px">
+        <input class="grow" data-e="post:{{ post.id }}:title" value="{{ post.title }}" placeholder="title">
+        <button class="icon-btn btn-danger" data-act="DELETE /studio/api/post/{{ post.id }}">✕</button>
+      </div>
+      <textarea data-e="post:{{ post.id }}:caption" style="min-height:60px">{{ post.caption }}</textarea>
+      <input data-e="post:{{ post.id }}:hashtags" value="{{ post.hashtags }}" placeholder="#hashtags">
+      <div class="small muted">{{ post.caption|length }} chars{% if post.external_id %} · OnlySocial post {{ post.external_id }}{% endif %}</div>
+    </div>
+    {% else %}<p class="muted">Run the Publish step to draft posts for every platform.</p>{% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<!-- BRIEF -->
+<section class="tab" id="tab-brief">
+  <div class="grid grid-halves">
+    <div class="panel">
+      <h2>Brief</h2>
+      <label>Premise / claim</label><textarea data-e="project:{{ p.id }}:premise">{{ p.premise }}</textarea>
+      <label>Director notes (every specialist reads these)</label><textarea data-e="project:{{ p.id }}:notes">{{ p.notes }}</textarea>
+      <label>Intake answers (JSON)</label><textarea class="script" data-type="json" data-e="project:{{ p.id }}:brief" style="min-height:160px">{{ (p.brief or {}) | tojson(indent=2) }}</textarea>
+    </div>
+    <div class="panel">
+      <h2>Settings</h2>
+      <label>Kind</label>
+      <select data-e="project:{{ p.id }}:kind" data-reload>{% for k in PROJECT_KINDS %}<option {{ 'selected' if k == p.kind }}>{{ k }}</option>{% endfor %}</select>
+      {% if p.kind in ('episode', 'documentary') %}
+      <div class="grid grid-halves">
+        <div><label>Runtime min (minutes)</label><input type="number" id="rt-min" value="{{ (p.data or {}).get('runtime_min', 30 if p.kind == 'documentary' else 12) }}"></div>
+        <div><label>Runtime max (minutes)</label><input type="number" id="rt-max" value="{{ (p.data or {}).get('runtime_max', 45 if p.kind == 'documentary' else 15) }}"></div>
+      </div>
+      {% endif %}
+      {% set research = (p.data or {}).get('research') %}
+      {% if research %}<h3 style="margin-top:1rem">Research summary</h3><p class="small">{{ research.summary }}</p>
+        {% if research.open_questions %}<p class="small"><b>Open questions:</b> {{ research.open_questions | join('; ') }}</p>{% endif %}{% endif %}
+      <h3 style="margin-top:1rem">Danger zone</h3>
+      <button class="btn btn-danger" data-act="DELETE /studio/api/project/{{ p.id }}" data-then="/studio/" data-confirm="Delete this project and everything in it{{ ' (including its episodes)' if children }}?">Delete project</button>
+    </div>
+  </div>
+</section>
+
+<!-- TASK MODAL -->
+<div class="modal-bg" id="modal"><div class="modal">
+  <div class="row spread"><span class="eyebrow" id="m-stage"></span><button class="icon-btn" id="m-close">✕</button></div>
+  <input class="inline" id="m-title" style="font-size:1.2rem;font-weight:800">
+  <div class="grid grid-halves">
+    <div><label>Specialist</label><select id="m-spec"><option value="">— you (human task) —</option>{% for s in specialists %}<option value="{{ s.key }}">{{ s.name }} — {{ s.role }}</option>{% endfor %}</select></div>
+    <div><label>Status</label><select id="m-status">{% for s in TASK_STATUSES %}<option>{{ s }}</option>{% endfor %}</select></div>
+  </div>
+  <label>Instructions</label><textarea id="m-instr" style="min-height:60px"></textarea>
+  <label class="row" style="text-transform:none"><input type="checkbox" id="m-auto"> A specialist model runs this step</label>
+  <div id="m-error" class="banner red" style="display:none"></div>
+  <label>Output <span id="m-model" class="muted"></span></label>
+  <textarea id="m-output" class="script"></textarea>
+  <div id="m-cites" class="small"></div>
+  <div class="row spread" style="margin-top:.8rem">
+    <span class="row">
+      <button class="btn btn-primary" id="m-run">▶ Run specialist</button>
+      <button class="btn" id="m-approve">✓ Approve / done</button>
+      <button class="btn" id="m-save">Save</button>
+    </span>
+    <button class="btn btn-danger" id="m-delete">Delete task</button>
+  </div>
+</div></div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const PID = {{ p.id }};
+  const running = {{ 'true' if pr.running else 'false' }};
+
+  // Poll while a specialist is working, then refresh.
+  if (running) {
+    const iv = setInterval(async () => {
+      const d = await Studio.api("GET", `/studio/api/project/${PID}`);
+      if (!d.progress.running) { clearInterval(iv); location.reload(); }
+    }, 3000);
+  }
+
+  document.getElementById("autopilot").addEventListener("change", (e) =>
+    Studio.api("POST", `/studio/api/project/${PID}/data`, { autopilot: e.target.checked }).then(() => Studio.toast(e.target.checked ? "Autopilot on" : "Autopilot off")));
+
+  ["rt-min", "rt-max"].forEach((id) => { const el = document.getElementById(id); if (!el) return;
+    el.addEventListener("change", () => Studio.api("POST", `/studio/api/project/${PID}/data`, { [id === "rt-min" ? "runtime_min" : "runtime_max"]: Number(el.value) }).then(() => Studio.toast("Saved"))); });
+
+  // New task
+  document.getElementById("nt-add").onclick = async () => {
+    const title = document.getElementById("nt-title").value.trim(); if (!title) return;
+    const specialist = document.getElementById("nt-spec").value;
+    await Studio.api("POST", `/studio/api/project/${PID}/task`, { title, specialist,
+      stage: document.getElementById("nt-stage").value, instructions: document.getElementById("nt-instr").value, auto: !!specialist });
+    location.reload();
+  };
+
+  // New source
+  const nsAdd = document.getElementById("ns-add");
+  if (nsAdd) nsAdd.onclick = async () => {
+    const v = (id) => document.getElementById(id).value;
+    if (!v("ns-url")) { Studio.toast("URL required", true); return; }
+    await Studio.api("POST", `/studio/api/project/${PID}/source`, { url: v("ns-url"), title: v("ns-title"), kind: v("ns-kind"), supports: v("ns-supports"), quote: v("ns-quote") });
+    location.reload();
+  };
+
+  // Uploads onto an existing asset
+  document.querySelectorAll("[data-upload]").forEach((inp) => inp.addEventListener("change", async () => {
+    if (!inp.files.length) return;
+    const fd = new FormData(); fd.append("file", inp.files[0]);
+    await Studio.api("POST", `/studio/api/asset/${inp.dataset.upload}/upload`, fd, true);
+    location.reload();
+  }));
+  const af = document.getElementById("asset-form");
+  if (af) af.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await Studio.api("POST", `/studio/api/project/${PID}/asset`, new FormData(af), true);
+    location.reload();
+  });
+
+  // Copy / download script text
+  document.addEventListener("click", (e) => {
+    const c = e.target.closest("[data-copy]");
+    if (c) { navigator.clipboard.writeText(document.getElementById(c.dataset.copy).value); Studio.toast("Copied"); }
+    const d = e.target.closest("[data-download]");
+    if (d) { const blob = new Blob([document.getElementById(d.dataset.download).value], { type: "text/plain" });
+      const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = d.dataset.name; a.click(); }
+  });
+
+  // Spock chat
+  const chat = document.getElementById("chat"), chatIn = document.getElementById("chat-in");
+  if (chat) chat.scrollTop = chat.scrollHeight;
+  const addMsg = (role, text) => { const d = document.createElement("div"); d.className = "msg " + role;
+    d.innerHTML = `<span class="who">${role === "user" ? "You" : "Spock"}</span>${Studio.esc(text)}`; chat.appendChild(d); chat.scrollTop = chat.scrollHeight; return d; };
+  document.getElementById("chat-send").onclick = async () => {
+    const text = chatIn.value.trim(); if (!text) return;
+    addMsg("user", text); chatIn.value = "";
+    const thinking = addMsg("assistant", "…");
+    try { const r = await Studio.api("POST", `/studio/api/project/${PID}/chat`, { message: text }); thinking.remove(); addMsg("assistant", r.reply); }
+    catch (e) { thinking.remove(); }
+  };
+  chatIn.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) document.getElementById("chat-send").click(); });
+
+  // Topics editor (series)
+  const topicsEl = document.getElementById("topics");
+  if (topicsEl) {
+    let topics = {{ ((p.data or {}).get('topics') or []) | tojson }};
+    const save = () => Studio.api("POST", `/studio/api/project/${PID}/data`, { topics });
+    const draw = () => {
+      topicsEl.innerHTML = topics.map((t, i) => `
+        <li data-id="${i}" draggable="true" style="flex-direction:column;align-items:stretch">
+          <div class="row"><span class="handle">⠿</span><span class="rankno">${i + 1}</span>
+            <input type="checkbox" data-ti="${i}" data-f="include" ${t.include === false ? "" : "checked"} title="Include">
+            <input class="inline grow" style="font-weight:700" data-ti="${i}" data-f="title" value="${Studio.esc(t.title)}">
+            <span class="pill">${Studio.esc(t.strength || "?")}</span>
+            <span class="movers"><button class="icon-btn" data-tmove="${i}:-1">▲</button><button class="icon-btn" data-tmove="${i}:1">▼</button>
+            <button class="icon-btn btn-danger" data-tdel="${i}">✕</button></span></div>
+          <details><summary class="small muted">${Studio.esc((t.angle || "").slice(0, 140))}</summary>
+            <label>Angle</label><textarea data-ti="${i}" data-f="angle">${Studio.esc(t.angle || "")}</textarea>
+            <label>Why it matters</label><textarea data-ti="${i}" data-f="why_it_matters">${Studio.esc(t.why_it_matters || "")}</textarea>
+            <div class="small">${(t.key_documents || []).map((u) => `<a href="${Studio.esc(u)}" target="_blank">${Studio.esc(u)}</a>`).join("<br>")}</div>
+          </details></li>`).join("") || '<p class="muted small">No topics yet — the Investigator proposes them, or add your own.</p>';
+    };
+    draw();
+    topicsEl.addEventListener("change", (e) => {
+      const el = e.target.closest("[data-ti]"); if (!el) return; e.stopPropagation();
+      const t = topics[+el.dataset.ti]; t[el.dataset.f] = el.type === "checkbox" ? el.checked : el.value; save();
+    }, true);
+    topicsEl.addEventListener("click", (e) => {
+      const m = e.target.closest("[data-tmove]"), d = e.target.closest("[data-tdel]");
+      if (m) { const [i, dir] = m.dataset.tmove.split(":").map(Number); const j = i + dir;
+        if (j < 0 || j >= topics.length) return; [topics[i], topics[j]] = [topics[j], topics[i]]; draw(); save(); }
+      if (d && confirm("Remove this topic?")) { topics.splice(+d.dataset.tdel, 1); draw(); save(); }
+    });
+    // Drag: the generic handler reorders the DOM and posts entity "none" — intercept that and save topics instead.
+    topicsEl.dataset.onsave = "__saveTopics";
+    window.__saveTopics = () => { const order = [...topicsEl.children].map((li) => +li.dataset.id); topics = order.map((i) => topics[i]); draw(); save(); };
+    document.getElementById("topic-add").onclick = () => { topics.push({ title: "New topic", angle: "", include: true, strength: "?" }); draw(); save(); };
+  }
+
+  // Task modal
+  const modal = document.getElementById("modal"); let current = null;
+  const $ = (id) => document.getElementById(id);
+  async function openTask(id) {
+    const t = await Studio.api("GET", `/studio/api/task/${id}`); current = t;
+    $("m-stage").textContent = (t.segment ? "Segment: " + t.segment + " · " : "") + t.stage;
+    $("m-title").value = t.title; $("m-spec").value = t.specialist || ""; $("m-status").value = t.status;
+    $("m-instr").value = t.instructions || ""; $("m-auto").checked = t.auto; $("m-output").value = t.output || "";
+    $("m-model").textContent = t.model_used ? `(by ${t.model_used})` : "";
+    $("m-error").style.display = t.error ? "block" : "none"; $("m-error").textContent = t.error || "";
+    $("m-cites").innerHTML = (t.citations || []).length ? "<b>Pages the specialist actually opened/searched:</b><br>" +
+      t.citations.map((c) => `<a href="${Studio.esc(c.url)}" target="_blank">${Studio.esc(c.title || c.url)}</a>`).join("<br>") : "";
+    $("m-run").style.display = t.auto ? "" : "none";
+    modal.classList.add("on");
+  }
+  document.addEventListener("click", (e) => { const o = e.target.closest("[data-open-task]"); if (o) { e.preventDefault(); openTask(o.dataset.openTask); } });
+  $("m-close").onclick = () => modal.classList.remove("on");
+  modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("on"); });
+  const saveTask = () => Studio.api("PATCH", `/studio/api/task/${current.id}`, { title: $("m-title").value,
+    specialist: $("m-spec").value || null, status: $("m-status").value, instructions: $("m-instr").value,
+    auto: $("m-auto").checked, output: $("m-output").value });
+  $("m-save").onclick = async () => { await saveTask(); location.reload(); };
+  $("m-run").onclick = async () => { await saveTask(); await Studio.api("POST", `/studio/api/task/${current.id}/run`); location.reload(); };
+  $("m-approve").onclick = async () => { await saveTask(); await Studio.api("POST", `/studio/api/task/${current.id}/approve`); location.reload(); };
+  $("m-delete").onclick = async () => { if (!confirm("Delete this task?")) return; await Studio.api("DELETE", `/studio/api/task/${current.id}`); location.reload(); };
+  const qt = new URLSearchParams(location.search).get("task"); if (qt) openTask(qt);
+});
+</script>
+{% endblock %}

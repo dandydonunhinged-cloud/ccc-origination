@@ -1,0 +1,117 @@
+{% extends "studio/base.html" %}
+{% block title %}Player · {{ p.title }}{% endblock %}
+{% block body %}
+<style>
+  .stage16x9 { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #0d0d12; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; container-type: inline-size; }
+  .region { position: absolute; overflow: hidden; }
+  .r-main { left: 0; top: 0; width: 75%; height: 75%; background: #000; display: flex; align-items: center; justify-content: center; }
+  .r-links { left: 0; top: 75%; width: 75%; height: 25%; display: flex; flex-wrap: wrap; gap: 1.2cqw; align-items: center; padding: 0 2cqw; background: #111119; border-top: .3cqw solid var(--accent); }
+  .r-links a { color: #fff; font-weight: 800; font-size: 1.5cqw; text-decoration: none; padding: .5cqw 1cqw; border: .15cqw solid #333; border-radius: .6cqw; }
+  .r-links a:hover { border-color: var(--accent); }
+  .r-host { left: 75%; top: 0; width: 25%; height: 50%; background: #16161f; display: flex; align-items: center; justify-content: center; border-left: .15cqw solid #222; }
+  .r-host img, .r-host video { max-width: 90%; max-height: 90%; }
+  .r-sources { left: 75%; top: 50%; width: 25%; height: 50%; background: #111119; border-left: .15cqw solid #222; padding: 1.5cqw; display: flex; flex-direction: column; justify-content: center; gap: .8cqw; }
+  .r-sources .lbl { color: var(--accent); font-weight: 900; font-size: 1.3cqw; letter-spacing: .1em; }
+  .r-sources a { color: #fff; font-size: 1.2cqw; word-break: break-all; }
+  .r-sources .now { color: #aaa; font-size: 1cqw; }
+  .doc-card { width: 86%; background: #f4f1ea; color: #111; border-radius: .6cqw; padding: 2.4cqw; box-shadow: 0 1cqw 3cqw rgba(0,0,0,.6); font-family: Georgia, serif; }
+  .doc-card .src { font: 700 1cqw var(--f); text-transform: uppercase; letter-spacing: .08em; color: #8a1c1c; }
+  .doc-card h3 { font-size: 2cqw; margin: .5cqw 0 1cqw; color: #111; }
+  .doc-card mark { background: #ffe066; padding: 0 .2cqw; font-size: 1.7cqw; line-height: 1.5; }
+  .doc-card .cap { font: 1.1cqw var(--f); color: #444; margin-top: 1cqw; }
+  .r-main img { max-width: 100%; max-height: 100%; }
+  .anim { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle, #3a0d14, #0d0d12); color: #fff; font: 900 2.6cqw var(--f); text-align: center; padding: 3cqw; }
+  .seg-title { position: absolute; left: 1.2cqw; top: 1.2cqw; background: var(--accent); color: #fff; font: 800 1.1cqw var(--f); padding: .3cqw .8cqw; border-radius: .3cqw; text-transform: uppercase; letter-spacing: .06em; }
+  .timeline { display: flex; gap: 2px; margin-top: .6rem; }
+  .timeline button { flex: 1; min-width: 0; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); font-size: .72rem; padding: .35rem .2rem; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-radius: 4px; }
+  .timeline button.on { border-color: var(--accent); color: var(--ink); }
+</style>
+
+<div class="row spread">
+  <div><div class="eyebrow">Broadcast player — preview of the render</div><h1>{{ p.title }}</h1></div>
+  <a class="btn" href="/studio/project/{{ p.id }}/#assets">← Back to production</a>
+</div>
+{% for w in manifest.warnings %}<div class="banner">{{ w }}</div>{% endfor %}
+
+<div class="stage16x9" id="stage">
+  <div class="region r-main" id="main"><div class="anim">{{ manifest.brand.name or 'DanDon Media' }}</div></div>
+  <div class="region r-links">
+    {% for l in manifest.links_bar %}<a href="{{ l.url }}" target="_blank" rel="noopener">{{ l.label }}</a>{% else %}<span class="muted small">Add your platform links in Settings → Links bar</span>{% endfor %}
+  </div>
+  <div class="region r-host">
+    {% if manifest.brand.host_animation_url %}<video src="{{ manifest.brand.host_animation_url }}" autoplay loop muted playsinline></video>
+    {% else %}<img src="{{ manifest.brand.logo_url or '/static/studio/dandon-logo.svg' }}" alt="{{ manifest.brand.name }}">{% endif %}
+  </div>
+  <div class="region r-sources">
+    <div class="lbl">SOURCES</div>
+    <a href="{{ manifest.sources_url }}" target="_blank" rel="noopener">Every document in this episode →</a>
+    <div class="now" id="now-src"></div>
+  </div>
+</div>
+
+<div class="row" style="margin-top:.8rem">
+  {% if manifest.voice and manifest.voice.url %}
+  <audio id="audio" controls src="{{ manifest.voice.url }}" style="flex:1"></audio>
+  {% else %}
+  <button class="btn" id="play">▶ Play (timed preview, no narration yet)</button>
+  <input type="range" id="scrub" min="0" max="{{ manifest.duration_sec }}" step="0.1" value="0" style="flex:1">
+  {% endif %}
+  <span class="mono small" id="clock">0:00 / {{ (manifest.duration_sec // 60)|int }}:{{ '%02d'|format((manifest.duration_sec % 60)|int) }}</span>
+</div>
+<div class="timeline" id="timeline">
+  {% for s in manifest.segments %}<button data-t="{{ s.start }}" style="flex-grow:{{ (s.end - s.start)|round(2) }}" title="{{ s.title }}">{{ s.title }}</button>{% endfor %}
+</div>
+
+<details class="panel" style="margin-top:1rem"><summary><b>Render manifest (edit list)</b></summary>
+  <pre class="output mono small">{{ manifest | tojson(indent=2) }}</pre>
+</details>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const M = {{ manifest | tojson }};
+  const main = document.getElementById("main"), nowSrc = document.getElementById("now-src");
+  const esc = Studio.esc;
+  const isImg = (u) => /\.(png|jpe?g|gif|webp|avif)(\?|$)/i.test(u || "");
+  let lastKey = null;
+  function frame(t) {
+    const anim = M.animation.find((a) => t >= a.start && t < a.end);
+    const vis = M.visuals.find((v) => t >= v.start && t < v.end);
+    const seg = M.segments.find((s) => t >= s.start && t < s.end);
+    const key = (anim ? "a" + anim.asset_id : "") + (vis ? "v" + vis.asset_id : "") + (seg ? "s" + seg.segment_id : "");
+    document.querySelectorAll("#timeline button").forEach((b, i) => b.classList.toggle("on", seg && M.segments[i].segment_id === seg.segment_id));
+    if (key === lastKey) return; lastKey = key;
+    let html = "";
+    if (anim) html = anim.url && isImg(anim.url) ? `<img src="${esc(anim.url)}" alt="">`
+      : anim.url ? `<video src="${esc(anim.url)}" autoplay muted></video>` : `<div class="anim">${esc(anim.concept || anim.title)}</div>`;
+    else if (vis) {
+      const img = vis.url && isImg(vis.url) ? vis.url : null;
+      html = img ? `<img src="${esc(img)}" alt="">` : `<div class="doc-card"><div class="src">${esc(vis.source_title || "Source")}</div>
+        <h3>${esc(vis.title)}</h3>${vis.highlight ? `<mark>“${esc(vis.highlight)}”</mark>` : ""}
+        <div class="cap">${esc(vis.caption || "")} ${vis.clip_in ? `· clip ${esc(vis.clip_in)}–${esc(vis.clip_out)}` : ""}</div></div>`;
+    } else html = `<div class="anim">${esc(M.brand.name || "DanDon Media")}</div>`;
+    if (seg) html += `<div class="seg-title">${esc(seg.title)}</div>`;
+    main.innerHTML = html;
+    nowSrc.innerHTML = vis && vis.source_url ? `On screen: <a href="${esc(vis.source_url)}" target="_blank">${esc(vis.source_title || vis.source_url)}</a>` : "";
+  }
+  const clock = document.getElementById("clock");
+  const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  const tick = (t) => { frame(t); clock.textContent = `${fmt(t)} / ${fmt(M.duration_sec)}`; };
+  const audio = document.getElementById("audio");
+  let seek;
+  if (audio) {
+    audio.addEventListener("timeupdate", () => tick(audio.currentTime));
+    seek = (t) => { audio.currentTime = t; tick(t); };
+  } else {
+    const scrub = document.getElementById("scrub"); let playing = false, t0 = 0, base = 0;
+    const loop = () => { if (!playing) return; const t = base + (performance.now() - t0) / 1000;
+      if (t >= M.duration_sec) { playing = false; return; } scrub.value = t; tick(t); requestAnimationFrame(loop); };
+    document.getElementById("play").onclick = (e) => { playing = !playing; e.target.textContent = playing ? "❚❚ Pause" : "▶ Play (timed preview, no narration yet)";
+      if (playing) { base = Number(scrub.value); t0 = performance.now(); loop(); } };
+    scrub.addEventListener("input", () => { base = Number(scrub.value); t0 = performance.now(); tick(base); });
+    seek = (t) => { scrub.value = t; base = t; t0 = performance.now(); tick(t); };
+  }
+  document.querySelectorAll("#timeline button").forEach((b) => b.onclick = () => seek(Number(b.dataset.t)));
+  tick(0);
+});
+</script>
+{% endblock %}

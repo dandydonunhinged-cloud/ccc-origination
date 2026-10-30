@@ -78,6 +78,12 @@ app/
 ### Marketing (served as static)
 - `GET /mortgage/` and all sub-pages
 
+## Working on the UI with Claude
+
+`CLAUDE.md` holds the UI house rules for this app and install commands for
+the five design skills to use with Claude Code (frontend-design,
+web-design-guidelines, TasteSkill, UI/UX Pro Max, Impeccable).
+
 ## Local dev
 
 ```bash
